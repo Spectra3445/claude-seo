@@ -68,7 +68,7 @@ def _follow_external(url, timeout, delay):
             response = _polite_probe(current, "GET", _UA, timeout, delay)
         status, headers = response.status_code, dict(response.headers)
         response.close()
-        location = headers.get("Location")
+        location = next((v for k, v in headers.items() if str(k).lower() == "location"), None)
         if status not in (301, 302, 303, 307, 308) or not location:
             return chain, current, status, headers, None
         chain.append({"url": current, "status": status})
@@ -160,6 +160,19 @@ def audit(
     inbound_anchor = defaultdict(dict)
     external_refs = defaultdict(dict)
     links_checked = 0
+
+    def final_target(target):
+        current, seen = normalize_url(target), set()
+        for _ in range(6):
+            if current in seen:
+                break
+            seen.add(current)
+            dest = pages.get(current)
+            nxt = dest.get("redirect_to") if dest else None
+            if not nxt:
+                break
+            current = normalize_url(nxt)
+        return current
     for source, page in sources:
         scope = "indexable" if page.get("indexable") else "non-indexable"
         for link in page.get("links", []):
@@ -198,9 +211,16 @@ def audit(
                             },
                         )
                     )
-                if not link.get("nofollow") and dest and is_html_page(dest):
-                    inbound[normalize_url(target)].add(source)
-                    inbound_anchor[normalize_url(target)].setdefault(source, link.get("text", ""))
+                resolved = final_target(target)
+                final_dest = pages.get(resolved)
+                if (
+                    not link.get("nofollow")
+                    and resolved != normalize_url(source)
+                    and final_dest
+                    and is_html_page(final_dest)
+                ):
+                    inbound[resolved].add(source)
+                    inbound_anchor[resolved].setdefault(source, link.get("text", ""))
             elif not no_external and urlsplit(target).scheme.lower() in ("http", "https"):
                 external_refs[normalize_url(target)][source] = link.get("text", "")
     for fid, data, severities, title in [

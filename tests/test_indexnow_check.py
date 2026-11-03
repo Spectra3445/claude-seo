@@ -20,9 +20,37 @@ def test_read_only_check(monkeypatch, tmp_path):
     assert result["summary"]["endpoint_reachable"] is True
     assert "indexnow-no-key" in [x["id"] for x in result["findings"]]
     no_key = result["findings"][0]
+    assert no_key["severity"] == "Info"
+    assert no_key["title"] == "IndexNow key status not determined"
     assert no_key["count"] == 1
     assert no_key["pages"] == ["https://example.com/"]
     assert not any("?" in c for c in calls)
+
+
+def test_configured_indexnow_key_failure_is_reported(monkeypatch, tmp_path):
+    class R:
+        status_code = 404
+        text = ""
+
+    monkeypatch.setattr(indexnow_submit, "safe_requests_get", lambda *a, **kw: R())
+    result = indexnow_submit._check("https://example.com/", None, "abcdefgh", tmp_path / "ledger")
+    finding = next(x for x in result["findings"] if x["id"] == "indexnow-no-key")
+    assert finding["severity"] == "Low"
+    assert finding["title"] == "Configured IndexNow key could not be verified"
+
+
+def test_unrecorded_changed_urls_are_unknown_not_claimed_unsubmitted(monkeypatch, tmp_path):
+    class R:
+        status_code = 404
+        text = ""
+
+    monkeypatch.setattr(indexnow_submit, "safe_requests_get", lambda *a, **kw: R())
+    changes = tmp_path / "changes.json"
+    changes.write_text(json.dumps({"summary": {"changed_urls": ["https://example.com/a"]}}))
+    result = indexnow_submit._check("https://example.com/", str(changes), None, tmp_path / "ledger")
+    change_finding = next(x for x in result["findings"] if x["id"] == "indexnow-unsubmitted-changes")
+    assert change_finding["severity"] == "Info"
+    assert change_finding["details"][0]["status"] == "not-recorded-locally"
 
 
 def test_submit_ledger_on_success(monkeypatch, tmp_path):

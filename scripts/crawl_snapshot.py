@@ -243,7 +243,7 @@ def extract_html(html, page_url, site_host, headers=None, html_bytes=None, respo
         "lang": soup.html.get("lang") if soup.html else None,
         "canonical": canonical,
         "meta_robots": ", ".join(dict.fromkeys(robots)) or None,
-        "x_robots_tag": (headers or {}).get("X-Robots-Tag") or (headers or {}).get("x-robots-tag"),
+        "x_robots_tag": next((v for k, v in (headers or {}).items() if str(k).lower() == "x-robots-tag"), None),
         "links": links,
         "jsonld": jsonld,
         "jsonld_errors": errors,
@@ -400,7 +400,8 @@ def fetch_record(url, host, robots, args):
                 raise
     time.sleep(max(args.delay, 0))
     headers = response["headers"]
-    content_type = headers.get("Content-Type", "")
+    header_values = {str(key).lower(): value for key, value in headers.items()}
+    content_type = header_values.get("content-type", "")
     page = {
         "url": url,
         "status": response["status"],
@@ -412,8 +413,8 @@ def fetch_record(url, host, robots, args):
     if response.get("truncated"):
         page["truncated"] = True
     targets = []
-    if 300 <= response["status"] < 400 and headers.get("Location"):
-        page["redirect_to"] = normalize_url(urljoin(url, headers["Location"]))
+    if 300 <= response["status"] < 400 and header_values.get("location"):
+        page["redirect_to"] = normalize_url(urljoin(url, header_values["location"]))
         if is_internal(page["redirect_to"], host) and is_crawlable_url(page["redirect_to"]):
             targets.append(page["redirect_to"])
     elif response["status"] == 200 and "html" in content_type.lower():
@@ -422,7 +423,7 @@ def fetch_record(url, host, robots, args):
                 decode_body(response["body"], content_type),
                 url,
                 host,
-                headers,
+                header_values,
                 html_bytes=len(response["body"]),
                 response_ms=response.get("response_ms", 0),
             )
@@ -1046,15 +1047,32 @@ def themes(snapshot_path, links_path=None, schema_path=None):
         }
 
     incoming = {url: [] for url in html}
+
+    def final_target(target):
+        seen = set()
+        current = target
+        for _ in range(6):
+            key = normalize_url(current)
+            if key in seen:
+                break
+            seen.add(key)
+            dest = pages.get(key) or pages.get(current)
+            nxt = dest.get("redirect_to") if dest else None
+            if not nxt:
+                break
+            current = nxt
+        return normalize_url(current)
     broken_sources = {}
     for source, page in html.items():
         for link in page.get("links", []):
             target = link.get("target")
             if not link.get("internal"):
                 continue
-            target_page = pages.get(target)
-            if target in incoming:
-                incoming[target].append((source, not link.get("nofollow")))
+            target_key = normalize_url(target)
+            resolved = final_target(target)
+            target_page = pages.get(target_key) or pages.get(target)
+            if resolved in incoming and resolved != normalize_url(source):
+                incoming[resolved].append((source, not link.get("nofollow")))
             status = target_page.get("status") if target_page else None
             issue = (
                 "broken-link"
@@ -1071,7 +1089,7 @@ def themes(snapshot_path, links_path=None, schema_path=None):
         inlinks = incoming.get(url, [])
         if not inlinks:
             issues.add("no-inlink")
-        elif sum(1 for _, dofollow in inlinks if dofollow) == 1:
+        elif len({source for source, dofollow in inlinks if dofollow}) == 1:
             issues.add("one-dofollow-inlink")
         if any(link.get("no_anchor") for link in page.get("links", [])):
             issues.add("links-no-anchor")

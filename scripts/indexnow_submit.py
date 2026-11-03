@@ -238,6 +238,7 @@ def _check(url: str, changes: str | None, key_arg: str | None, ledger_path: Path
         r for r in ledger if bare_host(_normalized_host(str(r.get("host", "")))) == bare_host(host)
     ]
     key = key_arg or os.environ.get("INDEXNOW_KEY")
+    configured_key = bool(key)
     key_file = None
     valid = False
     if key and re.fullmatch(r"[A-Za-z0-9-]{8,128}", key):
@@ -249,7 +250,7 @@ def _check(url: str, changes: str | None, key_arg: str | None, ledger_path: Path
             pass
     candidates = []
     origin = f"{parsed.scheme}://{parsed.netloc}"
-    if not valid:
+    if not valid and not configured_key:
         for row in reversed(host_rows):
             recorded = row.get("key_file")
             if recorded:
@@ -260,7 +261,11 @@ def _check(url: str, changes: str | None, key_arg: str | None, ledger_path: Path
         key_file = urljoin(origin + "/", key + ".txt")
     if key_file:
         candidates.append(key_file)
-    for page in (urljoin(origin + "/", "robots.txt"), urljoin(origin + "/", "")):
+    discovery_pages = () if configured_key else (
+        urljoin(origin + "/", "robots.txt"),
+        urljoin(origin + "/", ""),
+    )
+    for page in discovery_pages:
         try:
             body = _safe_get(page, timeout=15).text
             candidates.extend(
@@ -269,10 +274,11 @@ def _check(url: str, changes: str | None, key_arg: str | None, ledger_path: Path
             )
         except Exception:
             pass
-    candidates.extend(
-        urljoin(origin + "/", p)
-        for p in ("indexnow.txt", "indexnow-key.txt", ".well-known/indexnow.txt")
-    )
+    if not configured_key:
+        candidates.extend(
+            urljoin(origin + "/", p)
+            for p in ("indexnow.txt", "indexnow-key.txt", ".well-known/indexnow.txt")
+        )
     seen = set()
     for candidate in candidates:
         if candidate in seen:
@@ -310,14 +316,31 @@ def _check(url: str, changes: str | None, key_arg: str | None, ledger_path: Path
         "last_submission_ts": max((str(r.get("ts", "")) for r in host_rows), default=None),
     }
     findings = []
-    if not key_file:
+    if configured_key and not valid:
         findings.append(
             finding(
                 "indexnow-no-key",
                 "Low",
-                "No IndexNow key file found",
+                "Configured IndexNow key could not be verified",
                 [f"{parsed.scheme}://{parsed.netloc}/"],
-                recommendation="Add a key file at the site root and submit changed URLs on publish.",
+                recommendation="Verify the configured key and key file URL.",
+                details=[{"key_file_url": key_file, "checked": "configured key file"}],
+            )
+        )
+    elif not configured_key and not key_file:
+        findings.append(
+            finding(
+                "indexnow-no-key",
+                "Info",
+                "IndexNow key status not determined",
+                [f"{parsed.scheme}://{parsed.netloc}/"],
+                recommendation="No configured key was available; checked the root, robots.txt, standard filenames and local ledger. An unlinked key filename cannot be discovered.",
+                details=[
+                    {
+                        "status": "not-determined",
+                        "checked": ["root", "robots.txt", "standard filenames", "local ledger"],
+                    }
+                ],
             )
         )
     if changes:
@@ -325,7 +348,7 @@ def _check(url: str, changes: str | None, key_arg: str | None, ledger_path: Path
         changed = data.get("summary", {}).get("changed_urls", [])
         old = data.get("source", {}).get("old", {}).get("captured_at")
         new = data.get("source", {}).get("new", {}).get("captured_at")
-        details, never, stale = [], 0, 0
+        unrecorded, stale_details = [], []
         for changed_url in changed:
             matches = [
                 (r.get("ts", ""), u)
@@ -334,25 +357,34 @@ def _check(url: str, changes: str | None, key_arg: str | None, ledger_path: Path
                 if _same_url(changed_url, u)
             ]
             if not matches:
-                never += 1
-                details.append({"url": changed_url, "status": "never", "last_submitted": None})
+                unrecorded.append(
+                    {"url": changed_url, "status": "not-recorded-locally", "last_submitted": None}
+                )
             else:
                 last = max((str(m[0]) for m in matches), default="")
                 cutoff = old or new or ""
                 if cutoff and last < cutoff:
-                    stale += 1
-                    details.append({"url": changed_url, "status": "stale", "last_submitted": last})
-        summary["unsubmitted"] = {"changed": len(changed), "never": never, "stale": stale}
-        if details:
+                    stale_details.append({"url": changed_url, "status": "stale", "last_submitted": last})
+        summary["unsubmitted"] = {
+            "changed": len(changed),
+            "not_recorded_locally": len(unrecorded),
+            "stale": len(stale_details),
+        }
+        if unrecorded:
             findings.append(
                 finding(
                     "indexnow-unsubmitted-changes",
-                    "Low",
-                    "Changed pages not submitted since the previous crawl",
-                    [d["url"] for d in details],
-                    recommendation="Submit changed URLs to IndexNow on publish.",
-                    details=details,
+                    "Info",
+                    "Changed pages have no local IndexNow submission record",
+                    [d["url"] for d in unrecorded],
+                    recommendation="The local ledger has no matching record; submissions made elsewhere cannot be determined.",
+                    details=unrecorded,
                 )
+            )
+        if stale_details:
+            findings.append(
+                finding("indexnow-unsubmitted-changes", "Low", "Changed pages have only older local submission records",
+                        [d["url"] for d in stale_details], recommendation="Submit changed URLs to IndexNow on publish.", details=stale_details)
             )
     return {
         "check": "indexnow",

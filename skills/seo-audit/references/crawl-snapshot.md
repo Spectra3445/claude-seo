@@ -22,6 +22,7 @@ $CS run serp_title_check.py <snapshot> --serp <serp.json> --out findings/serp-ti
 $CS run crawl_snapshot.py themes  <snapshot> --links findings/links.json --schema findings/schema.json --out findings/themes.json
 $CS run js_impact.py <snapshot> --max-pages 15 --out findings/js-impact.json
 $CS run indexnow_submit.py --check <url> --changes findings/changes.json --out findings/indexnow.json
+$CS run host_variants.py <url> --out findings/host-variants.json
 ```
 
 Re-audit: run `crawl` again into the same folder, then `diff --latest`. The
@@ -116,8 +117,9 @@ Exit code 0 on success even with findings; 2 on bad input.
 | Duplicate H1 and title, low text-to-HTML ratio (under 0.10), nofollow external links (notice), pages blocked (robots or noindex) | `crawl_snapshot.py onpage` | `duplicate-h1-title`, `low-text-ratio`, `nofollow-external`, `pages-blocked` |
 | AI-search content signals (heuristic proxy) | `crawl_snapshot.py onpage` | `ai-content-signals` |
 | Theme health % (crawlability, markup, internal linking, HTTPS, performance) | `crawl_snapshot.py themes` | summary only |
+| HTTP/HTTPS and www/non-www host variants and redirect chains | `host_variants.py` | `http-not-redirected`, `www-host-not-redirected`, `host-redirect-chain` |
 | Content, links, schema and head tags that exist only after JavaScript | `js_impact.py` | `js-content-only`, `js-links-only`, `js-schema-only`, `js-head-differs`, `js-render-failed` |
-| IndexNow key file, endpoint, changed pages never submitted | `indexnow_submit.py --check` | `indexnow-no-key`, `indexnow-unsubmitted-changes` |
+| IndexNow key and endpoint; changed-page submission records in the local ledger | `indexnow_submit.py --check` | `indexnow-no-key` (Info/not determined when no key is configured), `indexnow-unsubmitted-changes` (Info when absent from local ledger; stale local records are Low) |
 
 Notes:
 - Semrush false positives handled: a bot-blocked URL such as wa.me (429) is one

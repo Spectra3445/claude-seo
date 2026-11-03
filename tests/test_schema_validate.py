@@ -133,6 +133,61 @@ def test_google_any_of_and_most_specific_rule():
     assert missing == ["LocalBusiness missing offer or review"]
 
 
+def test_action_input_annotations_and_nested_property_specification():
+    vocab = {"types": {**VOCAB["types"], "Action": {"p": ["Thing"], "d": ["query-input", "target"]},
+                        "SearchAction": {"p": ["Action"], "d": []},
+                        "PropertyValueSpecification": {"p": ["Thing"], "d": ["valueName"]}},
+             "props": {**VOCAB["props"], "valueName": ["Text"]}}
+    vocab["types"]["Action"]["d"] += ["query-input", "url-input", "result-output"]
+    issues = validate([{"@context": "https://schema.org", "@type": "SearchAction",
+                        "query-input": "required name=search_term_string",
+                        "url-input": {"@type": "PropertyValueSpecification", "valueName": "url"},
+                        "result-output": {"@type": "PropertyValueSpecification", "valueName": "output"},
+                        "badProp": "x"}], vocab=vocab, rules={})
+    invalid = [i for i in issues if i["code"] == "schema-property-invalid"]
+    assert [i["path"].rsplit(".", 1)[-1] for i in invalid] == ["badProp"]
+    non_action = validate([{"@context": "https://schema.org", "@type": "Thing", "query-input": "x"}],
+                          vocab=vocab, rules={})
+    assert any(i["code"] == "schema-property-invalid" for i in non_action)
+
+    pvs = {"@context": "https://schema.org", "@type": "PropertyValueSpecification",
+           "valueName": "term", "valueRequired": True, "valuePattern": "*"}
+    schema_vocab = sv.get_data(None, "vocab")
+    assert not validate([pvs], vocab=schema_vocab, rules={})
+    bad_pvs = dict(pvs, bogusProperty="x")
+    assert any(i["code"] == "schema-property-invalid" for i in validate(
+        [bad_pvs], vocab=schema_vocab, rules={}
+    ))
+
+
+def test_itemlist_listitem_url_and_breadcrumb_require_item():
+    vocab = {"types": {**VOCAB["types"], "ItemList": {"p": ["Thing"], "d": ["itemListElement"]},
+                        "ListItem": {"p": ["Thing"], "d": ["position", "item", "url", "name"]}},
+             "props": VOCAB["props"]}
+    vocab["types"]["Thing"]["d"] += ["itemListElement"]
+    rules = {"ListItem": {"required": ["position", "item", "name"]}}
+    itemlist = {"@context": "https://schema.org", "@type": "ItemList", "itemListElement": [
+        {"@type": "ListItem", "position": 1, "url": "https://example.test/a"},
+        {"@type": "ListItem", "position": 2},
+    ]}
+    issues = validate([itemlist], vocab=vocab, rules=rules)
+    missing = [i for i in issues if i["code"] == "schema-required-missing"]
+    assert len(missing) == 2  # second item lacks url/item; first url form is valid
+    breadcrumb = {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
+        {"@type": "ListItem", "position": 1, "url": "https://example.test/a"},
+        {"@type": "ListItem", "position": 2, "item": "https://example.test/b"},
+    ]}
+    crumb_issues = validate([breadcrumb], vocab=vocab, rules=rules)
+    assert any(i["code"] == "schema-required-missing" and i["message"] == "ListItem missing item"
+               for i in crumb_issues)
+    breadcrumb["itemListElement"][-1] = {
+        "@type": "ListItem", "position": 2, "url": "https://example.test/b"
+    }
+    last_crumb_issues = validate([breadcrumb], vocab=vocab, rules=rules)
+    assert any(i["code"] == "schema-required-missing" and i["message"] == "ListItem missing name"
+               for i in last_crumb_issues)
+
+
 def test_context_restricted_google_rules_and_summary_kinds():
     rules = {
         "Offer": {"parents": ["Product.offers"], "required": ["price"]},

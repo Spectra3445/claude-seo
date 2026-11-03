@@ -107,6 +107,44 @@ def test_internal_findings_and_scopes():
     assert finds[("links-to-broken", "non-indexable")]["count"] == 1
 
 
+def test_redirect_destinations_receive_inlinks_without_self_credit():
+    root = "https://example.test/"
+    final = root + "guide/"
+    data = {"site": root, "pages": {
+        root: {"status": 200, "content_type": "text/html", "title": "home", "indexable": True,
+               "links": [{"target": root + "guide", "internal": True}]},
+        root + "guide": {"status": 301, "redirect_to": final},
+        final: {"status": 200, "content_type": "text/html", "title": "guide", "indexable": True,
+                "links": [{"target": root + "guide", "internal": True}]},
+    }}
+    result = link_audit.audit(data, "fixture", no_external=True)
+    orphan = next((f for f in result["findings"] if f["id"] == "no-internal-inlinks"), None)
+    assert not orphan or final not in orphan["urls"]
+    redirect_finding = next(f for f in result["findings"] if f["id"] == "links-to-redirect")
+    assert redirect_finding["count"] == 2
+
+
+def test_follow_external_accepts_lowercase_location(monkeypatch):
+    class Response:
+        def __init__(self, status, headers):
+            self.status_code = status
+            self.headers = headers
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        link_audit,
+        "_polite_probe",
+        lambda url, *args: Response(301, {"location": "https://ext.test/final"})
+        if url.endswith("/start") else Response(200, {}),
+    )
+    chain, final, status, _, error = link_audit._follow_external("https://ext.test/start", 1, 0)
+    assert final == "https://ext.test/final"
+    assert status == 200 and error is None
+    assert len(chain) == 1
+
+
 def test_external_classification(monkeypatch):
     def probe(url, method, ua, timeout):
         class Response:

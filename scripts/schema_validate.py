@@ -231,7 +231,7 @@ def ancestors(typ, vocab):
 
 def validate_page(url, blocks, syntax, vocab, rules):
     issues = []
-    last_breadcrumb_items = set()
+    non_last_breadcrumb_items = set()
     parent_contexts = {}
 
     def collect_parents(value, parents=()):
@@ -253,13 +253,14 @@ def validate_page(url, blocks, syntax, vocab, rules):
 
     def mark_breadcrumbs(value):
         if isinstance(value, dict):
-            for key, children in value.items():
-                if key == "itemListElement":
-                    items = children if isinstance(children, list) else [children]
-                    for child in items[:-1]:
-                        if isinstance(child, dict) and "ListItem" in types_of(child):
-                            last_breadcrumb_items.add(id(child))
-                mark_breadcrumbs(children)
+            if "BreadcrumbList" in types_of(value):
+                children = value.get("itemListElement", [])
+                items = children if isinstance(children, list) else [children]
+                for child in items[:-1]:
+                    if isinstance(child, dict) and "ListItem" in types_of(child):
+                        non_last_breadcrumb_items.add(id(child))
+            for child in value.values():
+                mark_breadcrumbs(child)
         elif isinstance(value, list):
             for child in value:
                 mark_breadcrumbs(child)
@@ -317,9 +318,12 @@ def validate_page(url, blocks, syntax, vocab, rules):
             ancestry = set(
                 sum((ancestors(t, vocab) for t in ts if t in vocab.get("types", {})), [])
             )
+            is_action = "Action" in ancestry
             props = set(p for t in ancestry for p in vocab.get("types", {}).get(t, {}).get("d", []))
             for prop, value in node.items():
                 if prop.startswith("@") or ":" in prop:
+                    continue
+                if is_action and prop.endswith(("-input", "-output")):
                     continue
                 if prop not in props:
                     close = difflib.get_close_matches(
@@ -414,11 +418,22 @@ def validate_page(url, blocks, syntax, vocab, rules):
                     reqs = list(rule.get(level, []))
                     if (
                         specific == "ListItem"
-                        and id(node) in last_breadcrumb_items
+                        and id(node) in non_last_breadcrumb_items
                         and level == "required"
                     ):
                         reqs.append("item")
                     for req in reqs:
+                        if (
+                            specific == "ListItem"
+                            and id(node) not in non_last_breadcrumb_items
+                            and not any(
+                                parent == "BreadcrumbList"
+                                for parent, _ in parent_contexts.get(id(node), ())
+                            )
+                            and "url" in present
+                            and req in ("item", "name")
+                        ):
+                            continue
                         choices = req if isinstance(req, list) else [req]
                         if not present.intersection(choices):
                             code = (

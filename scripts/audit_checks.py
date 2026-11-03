@@ -54,6 +54,9 @@ TECH = (
     "pages-removed",
     "js-",
     "indexnow-",
+    "http-not-redirected",
+    "www-host-not-redirected",
+    "host-redirect-chain",
     "referring-domains-",
 )
 SEVERITY = {name: i for i, name in enumerate(("Critical", "High", "Medium", "Low", "Info"))}
@@ -82,6 +85,9 @@ RECOMMENDATIONS = {
     "js-render-failed": "Rendering failed; retest or check blocked resources.",
     "indexnow-no-key": "Add an IndexNow key file at the site root and submit changed URLs on publish (Bing, Yandex, Naver).",
     "indexnow-unsubmitted-changes": "Submit these changed URLs with indexnow_submit.py.",
+    "http-not-redirected": "Redirect HTTP host variants to the HTTPS canonical host.",
+    "www-host-not-redirected": "Choose either www or non-www as canonical and redirect the other host.",
+    "host-redirect-chain": "Reduce host normalization to a single redirect hop.",
     "meta-description-too-long": "Shorten to about 155 characters; Google truncates long descriptions.",
     "meta-description-missing": "Write a unique description of 120 to 155 characters.",
     "title-missing": "Add a unique title tag.",
@@ -274,7 +280,7 @@ def main() -> int:
     manifest: dict[str, dict] = {}
 
     def step(name: str, argv: list[str], output: Path | None = None, progress: int = 1) -> int:
-        print("step " + str(progress) + "/8 " + name, file=sys.stderr)
+        print("step " + str(progress) + "/9 " + name, file=sys.stderr)
         started = time.monotonic()
         code, stdout, stderr = run_step([sys.executable, *argv])
         manifest[name] = {
@@ -425,6 +431,9 @@ def main() -> int:
         index_cmd += ["--changes", str(diff_path)]
     index_cmd += ["--out", str(findings_dir / "indexnow.json")]
     step("indexnow", index_cmd, findings_dir / "indexnow.json", 8)
+    step("host-variants", [str(SCRIPTS / "host_variants.py"), args.url, "--out",
+                            str(findings_dir / "host-variants.json")],
+         findings_dir / "host-variants.json", 9)
 
     try:
         snap_data = load_snapshot(snapshot)

@@ -90,7 +90,7 @@ claude-seo/
     seo-flow.md                  # FLOW framework integration
   hooks/                           # Quality gate hooks
     hooks.json                   # PostToolUse schema validation
-  scripts/                         # 68 Python execution scripts
+  scripts/                         # 69 Python execution scripts
     google_auth.py               # Credential management (OAuth, SA, API key, 4-tier detection)
     backlinks_auth.py            # Backlink API credential management (Moz, Bing)
     moz_api.py                   # Moz Link Explorer API (DA/PA, spam, domains, anchors)
@@ -148,6 +148,7 @@ claude-seo/
     seo_updates.py               # Primary-source Google updates query tool
     serp_title_check.py          # Page title vs stored SERP title mismatch check
     snapshot_io.py               # Shared snapshot load/save/normalise helpers for the audit checks
+    host_variants.py             # Read-only HTTP/HTTPS and www/non-www redirect checks
     indexnow_submit.py           # IndexNow submitter
     ucp_check.py                 # UCP (Universal Commerce Protocol) profile auditor
     unlighthouse_run.py          # Unlighthouse CLI wrapper (site-wide Lighthouse)

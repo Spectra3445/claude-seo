@@ -186,6 +186,7 @@ def test_themes_theme_percentages(tmp_path):
             response_ms=200,
             links=[
                 {"target": child, "internal": True, "nofollow": False},
+                {"target": "https://example.com/child-redirect", "internal": True, "nofollow": False},
                 {"target": broken, "internal": True, "nofollow": False},
                 {"target": "http://example.com/insecure", "internal": True, "nofollow": False},
             ],
@@ -206,6 +207,14 @@ def test_themes_theme_percentages(tmp_path):
                 }
             ],
         ),
+        "https://example.com/child-redirect": {
+            "url": "https://example.com/child-redirect",
+            "status": 301,
+            "redirect_to": child,
+            "final_url": child,
+            "redirect_chain": [],
+            "indexable": False,
+        },
         orphan: dict(
             page(orphan),
             final_url=orphan,
@@ -231,7 +240,7 @@ def test_themes_theme_percentages(tmp_path):
     )
     result = cs.themes(str(snap_path), schema_path=str(schema_path))
     assert result["check"] == "themes"
-    assert result["summary"]["themes"]["crawlability"] == 75.0
+    assert result["summary"]["themes"]["crawlability"] == 80.0
     assert result["summary"]["themes"]["markup"] == 75.0
     assert result["themes"]["internal_linking"]["percent"] == 0.0
     child_failure = next(
@@ -240,7 +249,8 @@ def test_themes_theme_percentages(tmp_path):
         if item["url"] == child
     )
     assert "links-url-as-anchor" in child_failure["issues"]
-    assert result["themes"]["https"]["percent"] == 75.0
+    assert "one-dofollow-inlink" in child_failure["issues"]
+    assert result["themes"]["https"]["percent"] == 80.0
     assert result["themes"]["performance"]["percent"] == 100.0
     assert result["summary"]["overall"][0]["theme"] == "internal_linking"
 
@@ -502,6 +512,23 @@ def test_fetch_record_decodes_declared_charset(monkeypatch):
     _, record, _ = cs.fetch_record(url, "example.com", None, args)
     assert record["title"] == "Café"
     assert record["word_count"] == 1
+
+
+def test_fetch_record_accepts_lowercase_response_headers(monkeypatch):
+    url = "https://example.com/old"
+    monkeypatch.setattr(cs, "fetch", lambda *a, **kw: {
+        "status": 301, "headers": {"location": "/new/", "content-type": "text/html"}, "body": b""
+    })
+    args = SimpleNamespace(no_robots=True, timeout=1, user_agent="TestBot", delay=0)
+    _, record, targets = cs.fetch_record(url, "example.com", None, args)
+    assert record["redirect_to"] == "https://example.com/new/"
+    assert targets == [record["redirect_to"]]
+
+
+def test_extract_html_reads_lowercase_x_robots_tag():
+    result = cs.extract_html("<html><title>x</title></html>", "https://example.com/", "example.com",
+                             headers={"x-robots-tag": "noindex"})
+    assert result["x_robots_tag"] == "noindex"
 
 
 def test_robots_404_allows_but_503_fails_with_json(monkeypatch, capsys):
