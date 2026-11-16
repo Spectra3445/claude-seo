@@ -173,28 +173,32 @@ def cmd_load(paths, dry):
 
 
 def cmd_flush():
-    if not OUTBOX.exists():
+    pattern = f"{OUTBOX.stem}.drain-*{OUTBOX.suffix}"
+    drains = sorted(OUTBOX.parent.glob(pattern))
+    if OUTBOX.exists():
+        drain = OUTBOX.with_name(
+            f"{OUTBOX.stem}.drain-{uuid.uuid4().hex[:8]}{OUTBOX.suffix}"
+        )
+        try:
+            os.replace(OUTBOX, drain)
+            drains.append(drain)
+        except FileNotFoundError:
+            pass
+    if not drains:
         print("# outbox empty", file=sys.stderr)
         return 0
-    drain = OUTBOX.with_name(OUTBOX.name + f".drain-{uuid.uuid4().hex[:8]}")
     try:
-        os.replace(OUTBOX, drain)
-    except FileNotFoundError:
-        print("# outbox empty", file=sys.stderr)
-        return 0
-    if not drain.read_text().strip():
-        drain.unlink()
-        print("# outbox empty", file=sys.stderr)
-        return 0
-    runs = read_runs(str(drain))
-    try:
+        runs = [r for drain in drains for r in read_runs(str(drain))]
         push([r for r in runs if not validate(r)])
     except Exception:
-        with OUTBOX.open("a") as outbox, drain.open() as pending:
-            outbox.write(pending.read())
-        drain.unlink()
+        with OUTBOX.open("a") as outbox:
+            for drain in drains:
+                if drain.exists():
+                    outbox.write(drain.read_text())
+                    drain.unlink()
         raise
-    drain.unlink()
+    for drain in drains:
+        drain.unlink(missing_ok=True)
     print(f"# flushed {len(runs)} runs", file=sys.stderr)
     return 0
 

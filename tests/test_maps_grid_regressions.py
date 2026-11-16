@@ -30,6 +30,28 @@ def test_flush_preserves_entries_appended_during_upload(tmp_path, monkeypatch):
     assert [json.loads(line)["keyword"] for line in outbox.read_text().splitlines()] == ["during"]
 
 
+def test_flush_replays_multiple_runs_and_leftover_drain(tmp_path, monkeypatch):
+    db = _load("maps_grid_db_recovery", ROOT / "skills/seo-maps/scripts/maps_grid_db.py")
+    outbox = tmp_path / "maps-outbox.jsonl"
+    drain = tmp_path / "maps-outbox.drain-crashed.jsonl"
+    def run(keyword):
+        return {"client": "aristral", "keyword": keyword, "run_at": "2026-11-16T00:00:00Z",
+                "center_lat": 51.4, "center_lng": -2.6, "grid_size": 1,
+                "cells": [{"row": 0, "col": 0, "lat": 51.4, "lng": -2.6, "rank": None}]}
+
+    outbox.write_text("".join(json.dumps(run(k)) + "\n" for k in ("new-1", "new-2")))
+    drain.write_text("".join(json.dumps(run(k)) + "\n" for k in ("old-1", "old-2")))
+    monkeypatch.setattr(db, "OUTBOX", outbox)
+    uploaded = []
+    monkeypatch.setattr(db, "push", lambda runs: uploaded.extend(runs))
+
+    assert db.cmd_flush() == 0
+
+    assert [run["keyword"] for run in uploaded] == ["old-1", "old-2", "new-1", "new-2"]
+    assert not drain.exists()
+    assert not list(tmp_path.glob("maps-outbox.drain-*.jsonl"))
+
+
 def test_geogrid_run_writes_unique_timestamped_filename(tmp_path, monkeypatch):
     geogrid = _load("geogrid_regression", ROOT / "skills/seo-maps/scripts/geogrid.py")
     raw = tmp_path / "raw.json"

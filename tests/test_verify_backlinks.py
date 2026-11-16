@@ -230,6 +230,19 @@ def test_server_error_is_counted_in_summary(fake_network):
     assert summary["lost"] == 0
 
 
+def test_inconclusive_is_counted_and_printed(fake_network, monkeypatch, tmp_path, capsys):
+    fake_network["page"] = {**_page(_html("partial")), "too_large": True}
+    summary = verify_backlinks.verify_backlinks(TARGET, [{"source_url": SOURCE}])["data"]["summary"]
+    assert summary["inconclusive"] == 1
+    assert summary["error"] == 0
+
+    links = tmp_path / "links.json"
+    links.write_text(f'[{{"source_url":"{SOURCE}"}}]')
+    monkeypatch.setattr(sys, "argv", ["verify_backlinks.py", "--target", TARGET, "--links", str(links)])
+    verify_backlinks.main()
+    assert "Inconclusive:   1" in capsys.readouterr().out
+
+
 def test_get_fallback_404_is_lost(fake_network):
     fake_network["head"] = FakeHeadResponse(405)
     fake_network["page"] = _page("Not found", status_code=404)

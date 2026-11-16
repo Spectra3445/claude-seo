@@ -379,7 +379,7 @@ def verify_backlinks(target_url: str, links: list, head_only: bool = False,
     """
     results = []
     summary = {"total": 0, "verified": 0, "lost": 0, "moved": 0,
-               "link_removed": 0, "unverifiable_js": 0, "exists": 0,
+               "link_removed": 0, "unverifiable_js": 0, "inconclusive": 0, "exists": 0,
                "server_error": 0, "error": 0}
 
     for item in links:
@@ -503,6 +503,7 @@ def main():
         print(f"  Lost (404/410): {summary.get('lost', 0)}")
         print(f"  Moved (3xx):    {summary.get('moved', 0)}")
         print(f"  Link removed:   {summary.get('link_removed', 0)}")
+        print(f"  Inconclusive:   {summary.get('inconclusive', 0)}")
         print(f"  Server errors:  {summary.get('server_error', 0)}")
         print(f"  Errors:         {summary.get('error', 0)}")
         if args.head_only:
