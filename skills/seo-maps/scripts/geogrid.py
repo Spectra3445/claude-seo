@@ -17,6 +17,7 @@ before re-running with --yes.
 import argparse
 import datetime as dt
 import json
+import uuid
 import math
 import os
 import re
@@ -142,7 +143,8 @@ def cmd_run(a):
                      "spacing_km": a.spacing_km, "zoom": a.zoom, "device": a.device,
                      "cost_usd": round(cost / len(a.keyword), 4), "source": "seo-maps",
                      "run_context": a.context, "run_at": run_at, "cells": cells})
-    out = Path(a.out) / f"grid-{a.client}-{run_at[:10]}.json"
+    run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out = Path(a.out) / f"grid-{a.client}-{run_stamp}-{uuid.uuid4().hex[:8]}.json"
     out.write_text(json.dumps({"runs": runs}, ensure_ascii=False, indent=1))
     for r in runs:
         print(ascii_heatmap(r) + "\n")

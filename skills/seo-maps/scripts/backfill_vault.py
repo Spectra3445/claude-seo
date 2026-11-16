@@ -233,7 +233,7 @@ def ascii_grid(block):
     rows = []
     for line in block.strip("\n").splitlines():
         toks = line.split("<-")[0].split()
-        if toks and all(t.isdigit() or t in ("·", "o", "-", "—", ".") for t in toks):  # skip legend lines
+        if toks and all(t.isdigit() or t in ("·", "o", "-", chr(0x2014), ".") for t in toks):  # skip legend lines
             rows.append([int(t) if t.isdigit() else None for t in toks])
     return rows
 

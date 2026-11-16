@@ -23,6 +23,7 @@ BANNED = [  # our stack never appears in a client report; pricing never appears 
     "screaming frog", "seodb", "aristral loop", "gsc_", "crux", "ollama", "openai", "gpt",
 ]
 PRICE = re.compile(r"[£$€]\s?\d")
+DASHES = (chr(0x2014), chr(0x2013))
 
 
 def lint_text(data):
@@ -37,7 +38,7 @@ def lint_text(data):
                 walk(x, f"{path}[{i}]")
         elif isinstance(v, str):
             low = v.lower()
-            if "—" in v or "–" in v:
+            if any(dash in v for dash in DASHES):
                 errs.append(f"{path}: em or en dash (use a full stop, comma, colon or brackets)")
             for b in BANNED:
                 if re.search(rf"\b{re.escape(b)}\b", low):
@@ -129,10 +130,12 @@ def line_chart(c):
     values = [p[1] for p in c["points"]]
     w, h, pad_l, pad_r, pad_t, pad_b = 560, 230, 46, 16, 18, 34
     ymin, ymax = c.get("ymin", 0), c.get("ymax", max(values))
+    if ymax == ymin:
+        ymax = ymin + 1
     ticks, style = c.get("ticks", []), c.get("format", "int")
     f = lambda n: fmt_num(n, style)
     iw, ih = w - pad_l - pad_r, h - pad_t - pad_b
-    xs = [pad_l + i * iw / (len(values) - 1) for i in range(len(values))]
+    xs = [pad_l + i * iw / (len(values) - 1) for i in range(len(values))] if len(values) > 1 else [pad_l + iw / 2]
     ys = [pad_t + ih - (v - ymin) / (ymax - ymin) * ih for v in values]
     pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in zip(xs, ys))
     area = f"M{xs[0]:.1f},{pad_t+ih:.1f} L" + " L".join(f"{x:.1f},{y:.1f}" for x, y in zip(xs, ys)) + f" L{xs[-1]:.1f},{pad_t+ih:.1f} Z"
@@ -238,7 +241,7 @@ def sec_rankings(s, sid, errs, r):
 
 def card_bars(c, errs):
     need(3 <= len(c["rows"]) <= 6, "bars card: 3 to 6 rows", errs)
-    mx = max(x["value"] for x in c["rows"])
+    mx = max(max(x["value"] for x in c["rows"]), 1)
     rows = "".join(f'<div class="lrow{" me" if x.get("me") else ""}"><span class="lname">{e(x["name"])}</span><span class="lbar">'
                    f'<span class="lfill" style="width:{x["value"]/mx*100:.1f}%"></span></span><span class="lnum">{x["value"]:,}</span></div>'
                    for x in c["rows"])

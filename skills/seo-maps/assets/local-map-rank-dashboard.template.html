@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Local Map Rank Dashboard — Aristral template</title>
+<title>Local Map Rank Dashboard: Aristral template</title>
 <!--
   ARISTRAL · Local Map Rank Dashboard (reusable template)
   =======================================================
@@ -14,7 +14,7 @@
   Grid data comes from a /seo-maps geo-grid scan. Rank keys are "row-col"
   (0-indexed, rows run North->South, cols run West->East). Omit a cell = the
   business is not in the top 20 at that point. KPIs (avg rank, share of voice,
-  coverage, distribution) are computed from the grid — you don't hand-calc them.
+  coverage, distribution) are computed from the grid. You don't hand-calc them.
 
   See README.md in this folder for the full field guide.
 -->
@@ -115,11 +115,11 @@ var CLIENT = {
   function col(r){if(r==null)return null;if(r<=T[0])return["#1f9d55","#fff"];if(r<=T[1])return["#d69e2e","#3d2c00"];if(r<=T[2])return["#dd6b20","#fff"];if(r<=T[3])return["#e24b4a","#fff"];return null;}
   function el(t){return document.createElement(t);}
   document.getElementById("acc").style.background=C.accent||"#e24b4a";
-  document.getElementById("brand").textContent=C.brand+" — local map rank";
+  document.getElementById("brand").textContent=C.brand+": local map rank";
   document.getElementById("meta").textContent="Hero keyword: "+C.heroKeyword+" · geo-grid snapshot "+C.snapshotDate+" · centre = "+C.centre;
   document.getElementById("kw-h").textContent="Rank by keyword · at the business ("+C.snapshotDate+")";
   document.getElementById("grid-h").textContent="Geo-grid · "+C.gridSpanKm+" km × "+C.gridSpanKm+" km · "+C.heroKeyword;
-  document.title=C.brand+" — Local Map Rank Dashboard";
+  document.title=C.brand+": Local Map Rank Dashboard";
 
   var ranked=Object.values(C.grid).filter(function(v){return v!=null;});
   var total=C.gridSize*C.gridSize;

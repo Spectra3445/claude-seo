@@ -78,6 +78,8 @@ Content-Type: application/json
 - **Scope:** `https://www.googleapis.com/auth/indexing`
 - **Auth type:** Service account (OAuth 2.0)
 - The service account must be **Owner** in Google Search Console for the target domain
+- With the OAuth sign-in, the scope is opt-in: the default `google_auth.py --auth` is
+  read-only, so sign in with `google_auth.py --auth --indexing --creds /path/to/client_secret.json`
 
 ## Quotas
 
@@ -87,7 +89,7 @@ Content-Type: application/json
 | Read-only requests | 180/min | Per project |
 | Total requests | 380/min | Per project |
 
-Request a quota increase: [Indexing API Quota Increase Form](https://developers.google.com/search/apis/indexing-api/v3/quota)
+View your quota in the [Google API Console](https://console.cloud.google.com/apis/api/indexing.googleapis.com/quotas). Google removed the outdated quota request form on 2026-10-16; see [Indexing API quota and pricing](https://developers.google.com/search/apis/indexing-api/v3/quota-pricing) for the current limits and process.
 
 ## Error Codes
 

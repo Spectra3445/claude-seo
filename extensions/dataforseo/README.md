@@ -123,18 +123,18 @@ The extension includes a custom `field-config.json` that reduces API response si
 
 When installed, other Claude SEO skills automatically detect DataForSEO availability and use live data:
 
-- **`/seo audit`**:Uses real SERP, backlink, and on-page data
-- **`/seo technical`**:Uses on-page analysis for real technical data
-- **`/seo content`**:Uses keyword volume, difficulty, and intent data
-- **`/seo geo`**:Uses ChatGPT scraper and LLM mentions for GEO signals
-- **`/seo plan`**:Uses competitor and keyword data for strategy
+- **`/seo audit`**: Uses real SERP, backlink, and on-page data
+- **`/seo technical`**: Uses on-page analysis for real technical data
+- **`/seo content`**: Uses keyword volume, difficulty, and intent data
+- **`/seo geo`**: Uses ChatGPT scraper and LLM mentions for GEO signals
+- **`/seo plan`**: Uses competitor and keyword data for strategy
 
 ## Troubleshooting
 
 ### MCP server not connecting
 
 1. Check credentials: `cat ~/.claude.json | grep DATAFORSEO`
-2. Test manually: `npx -y dataforseo-mcp-server`
+2. Test manually: `npx -y dataforseo-mcp-server@2.8.10` (the version the skills are written for)
 3. Re-run installer: `./extensions/dataforseo/install.sh`
 
 ### API errors

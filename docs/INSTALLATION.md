@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Python 3.10+** with pip (3.10 reaches end of life in October 2026; prefer 3.11 or newer)
+- **Python 3.11 to 3.14** with pip. Python 3.10 reached end of life in October 2026, and 3.15 waits on the Google Ads client library
 - **Git** for cloning the repository
 - **Claude Code CLI** installed and configured
 
@@ -77,6 +77,12 @@ back to global or user package installation.
 
 If core setup failed, rerun the inspected installer. If only Chromium failed,
 the installer reports a degraded result and raw-fetch analysis remains available.
+
+Chromium runs with its sandbox wherever the system can start it. On Ubuntu
+23.10 and later, in most containers and as root it cannot, so pages are
+rendered without the sandbox and a warning says so (`"sandbox": false` in JSON
+results). Set `CLAUDE_SEO_CHROMIUM_REQUIRE_SANDBOX=1` to fail instead. See
+[Troubleshooting](TROUBLESHOOTING.md) for how to enable the sandbox.
 
 ## Installation Paths
 

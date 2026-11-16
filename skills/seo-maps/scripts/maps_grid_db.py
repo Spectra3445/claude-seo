@@ -173,12 +173,28 @@ def cmd_load(paths, dry):
 
 
 def cmd_flush():
-    if not OUTBOX.exists() or not OUTBOX.read_text().strip():
+    if not OUTBOX.exists():
         print("# outbox empty", file=sys.stderr)
         return 0
-    runs = read_runs(str(OUTBOX))
-    push([r for r in runs if not validate(r)])
-    OUTBOX.write_text("")
+    drain = OUTBOX.with_name(OUTBOX.name + f".drain-{uuid.uuid4().hex[:8]}")
+    try:
+        os.replace(OUTBOX, drain)
+    except FileNotFoundError:
+        print("# outbox empty", file=sys.stderr)
+        return 0
+    if not drain.read_text().strip():
+        drain.unlink()
+        print("# outbox empty", file=sys.stderr)
+        return 0
+    runs = read_runs(str(drain))
+    try:
+        push([r for r in runs if not validate(r)])
+    except Exception:
+        with OUTBOX.open("a") as outbox, drain.open() as pending:
+            outbox.write(pending.read())
+        drain.unlink()
+        raise
+    drain.unlink()
     print(f"# flushed {len(runs)} runs", file=sys.stderr)
     return 0
 
