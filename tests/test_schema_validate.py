@@ -1,7 +1,11 @@
 import json
 import sys
+from pathlib import Path
 
-from scripts import schema_validate as sv
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import schema_validate as sv  # noqa: E402
 
 VOCAB = {
     "types": {

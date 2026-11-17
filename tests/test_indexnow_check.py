@@ -1,6 +1,11 @@
 import json
+import sys
+from pathlib import Path
 
-from scripts import indexnow_submit
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import indexnow_submit  # noqa: E402
 
 
 def test_read_only_check(monkeypatch, tmp_path):

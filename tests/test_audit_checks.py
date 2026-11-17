@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-from scripts import audit_checks
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import audit_checks  # noqa: E402
 
 
 def test_merge_mapping_sorting_and_zero_counts():

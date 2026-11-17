@@ -1,4 +1,10 @@
-from scripts import host_variants
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import host_variants  # noqa: E402
 
 
 def test_host_variant_probe_reports_www_and_http_with_injected_fetcher():

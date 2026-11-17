@@ -1,6 +1,12 @@
+import sys
+from pathlib import Path
+
 import requests
 
-from scripts import link_audit
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import link_audit  # noqa: E402
 
 
 def snapshot():
