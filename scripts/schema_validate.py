@@ -28,7 +28,7 @@ from snapshot_io import (  # noqa: E402
     now_iso,
     write_json,
 )
-from url_safety import safe_requests_get  # noqa: E402
+from url_safety import MAX_PAGE_BYTES, safe_requests_get  # noqa: E402
 
 _DATA_DIR = os.path.join(_SCRIPTS_DIR, "..", "data")
 _VOCAB = None
@@ -561,7 +561,7 @@ def main():
             urls = a.inputs + (a.url or [])
             for url in urls:
                 with _FETCH_LOCK:
-                    response = safe_requests_get(url, timeout=30)
+                    response = safe_requests_get(url, timeout=30, max_bytes=MAX_PAGE_BYTES)
                 response.raise_for_status()
                 blocks, syntax = extract_jsonld(response.text)
                 pages[url] = validate_page(url, blocks, syntax, vocab, rules)

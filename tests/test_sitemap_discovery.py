@@ -36,7 +36,7 @@ def response(status=200, content=b"", url="https://example.com/", error=None, to
 
 
 def test_wordpress_index_is_found_after_default_path_fails():
-    def fake_fetch(url, _limit):
+    def fake_fetch(url, _limit, **_kwargs):
         if url.endswith("robots.txt"):
             return response(content=b"User-agent: *\n")
         if url.endswith("sitemap_index.xml"):
@@ -51,7 +51,7 @@ def test_wordpress_index_is_found_after_default_path_fails():
 def test_stale_declared_sitemap_does_not_suppress_working_fallback():
     stale = "https://example.com/old.xml"
 
-    def fake_fetch(url, _limit):
+    def fake_fetch(url, _limit, **_kwargs):
         if url.endswith("robots.txt"):
             return response(content=f"Sitemap: {stale}\n".encode())
         if url == stale:
@@ -73,7 +73,7 @@ def test_multiple_directives_are_deduplicated_and_cross_host_is_recorded():
         b"Sitemap: https://example.com/b.xml\n"
     )
 
-    def fake_fetch(url, _limit):
+    def fake_fetch(url, _limit, **_kwargs):
         if url.endswith("robots.txt"):
             return response(content=robots)
         if url.endswith(("a.xml", "b.xml")):
@@ -90,7 +90,7 @@ def test_multiple_directives_are_deduplicated_and_cross_host_is_recorded():
 def test_unsafe_declared_target_is_not_treated_as_found():
     unsafe = "http://127.0.0.1/private.xml"
 
-    def fake_fetch(url, _limit):
+    def fake_fetch(url, _limit, **_kwargs):
         if url.endswith("robots.txt"):
             return response(content=f"Sitemap: {unsafe}\n".encode())
         if url == unsafe:
@@ -123,7 +123,7 @@ def test_text_sitemap_entries_are_syntax_checked_without_dns_resolution():
 def test_doctype_and_oversized_sitemap_are_rejected():
     assert discovery._sitemap_kind(b"<!DOCTYPE x><urlset/>", "application/xml", "https://example.com/sitemap.xml")[0] is None
 
-    def fake_fetch(url, _limit):
+    def fake_fetch(url, _limit, **_kwargs):
         if url.endswith("robots.txt"):
             return response(content=b"Sitemap: https://example.com/huge.xml\n")
         if url.endswith("huge.xml"):
@@ -139,7 +139,7 @@ def test_doctype_and_oversized_sitemap_are_rejected():
 def test_query_values_are_never_returned_in_discovery_output():
     declared = "https://example.com/private.xml?token=not-for-output"
 
-    def fake_fetch(url, _limit):
+    def fake_fetch(url, _limit, **_kwargs):
         if url.endswith("robots.txt"):
             return response(content=f"Sitemap: {declared}\n".encode())
         if url == declared:
@@ -156,6 +156,29 @@ def test_query_values_are_never_returned_in_discovery_output():
 def test_private_literal_is_refused_before_network_request():
     result = discovery._bounded_fetch("http://127.0.0.1/sitemap.xml", 100)
     assert result["error"] == "URL safety validation failed"
+
+
+def test_operator_local_origin_keeps_exception_but_other_hosts_do_not(monkeypatch):
+    origin = "http://127.0.0.1:8080"
+    other = "http://127.0.0.2:8080/foreign.xml"
+    monkeypatch.setenv("CLAUDE_SEO_LOCAL_TARGETS", "127.0.0.1:8080,127.0.0.2:8080")
+    calls = []
+    def fake_fetch(url, _limit, *, public_only=True):
+        calls.append((url, public_only))
+        if url.endswith("/robots.txt"):
+            return response(content=f"Sitemap: {origin}/index.xml\nSitemap: {other}\n".encode(), url=url)
+        if url == origin + "/index.xml":
+            body = (f'<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+                    f'<sitemap><loc>{origin}/child.xml</loc></sitemap>'
+                    f'<sitemap><loc>{other}</loc></sitemap></sitemapindex>').encode()
+            return response(content=body, url=url)
+        return response(status=404, url=url)
+    monkeypatch.setattr(discovery, "_bounded_fetch", fake_fetch)
+    discovery.discover_sitemaps(origin, expand=True)
+    assert (origin + "/robots.txt", False) in calls
+    assert (origin + "/index.xml", False) in calls
+    assert (origin + "/child.xml", False) in calls
+    assert (other, True) in calls
 
 
 def test_invalid_port_is_reported_without_crashing():
@@ -183,7 +206,7 @@ def test_commented_sitemap_directive_is_the_url_that_gets_fetched():
     declared = "https://example.com/products.xml"
     fetched = []
 
-    def fake_fetch(url, _limit):
+    def fake_fetch(url, _limit, **_kwargs):
         fetched.append(url)
         if url.endswith("robots.txt"):
             return response(
@@ -204,7 +227,7 @@ def test_paths_that_redirect_to_one_sitemap_are_listed_once():
     """Rank Math sends /sitemap.xml to /sitemap_index.xml: one file, one listing."""
     final = "https://example.com/sitemap_index.xml"
 
-    def fake_fetch(url, _limit):
+    def fake_fetch(url, _limit, **_kwargs):
         if url.endswith("robots.txt"):
             return response(content=b"User-agent: *\n")
         if url.endswith(("/sitemap.xml", "/sitemap_index.xml")):
@@ -222,7 +245,7 @@ def test_paths_that_redirect_to_one_sitemap_are_listed_once():
 def discover_one(body, url="https://example.com/sitemap.xml.gz", content_type="application/gzip"):
     """Plain discovery of a site whose robots.txt declares one sitemap."""
 
-    def fake_fetch(fetch_url, _limit):
+    def fake_fetch(fetch_url, _limit, **_kwargs):
         if fetch_url.endswith("robots.txt"):
             return response(content=f"Sitemap: {url}\n".encode())
         if fetch_url == url:

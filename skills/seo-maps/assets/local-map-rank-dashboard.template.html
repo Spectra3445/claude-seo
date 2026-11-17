@@ -159,7 +159,7 @@ var CLIENT = {
   var lg=document.getElementById("legend");
   legend.forEach(function(x){var s=el("span");s.className="leg";s.innerHTML='<span class="dot" style="background:'+x[0]+'"></span>'+x[1];lg.appendChild(s);});
   var o=el("span");o.className="leg";o.innerHTML='<span class="dot" style="background:var(--bg2);border:.5px solid var(--bd2)"></span>not in top '+T[3];lg.appendChild(o);
-  var you=el("span");you.className="leg";you.innerHTML='<span style="width:12px;height:12px;border-radius:50%;border:2px solid var(--tp);display:inline-block"></span>'+C.brand+" (you)";lg.appendChild(you);
+  var you=el("span"),dot=el("span");you.className="leg";dot.style.cssText="width:12px;height:12px;border-radius:50%;border:2px solid var(--tp);display:inline-block";you.appendChild(dot);you.appendChild(document.createTextNode(C.brand+" (you)"));lg.appendChild(you);
 
   var kw=document.getElementById("kw");
   C.keywords.forEach(function(x){

@@ -169,11 +169,13 @@ def build(src: Path, pdf: Path):
            "<meta name=\"viewport\" content=\"width=1280\">" + head + PRINT_CSS + "</head><body>"
            "<div id=\"src\" class=\"wrap\">" + body + "</div>" + PAGINATE_JS + "</body></html>")
     tmp = src.with_name(src.stem + ".print.html")
-    tmp.write_text(doc)
-    subprocess.run([CHROME, "--headless=new", "--no-pdf-header-footer", "--virtual-time-budget=10000",
-                    "--window-size=1280,1800", f"--print-to-pdf={pdf}", tmp.as_uri()],
-                   check=True, stderr=subprocess.DEVNULL)
-    tmp.unlink()
+    try:
+        tmp.write_text(doc)
+        subprocess.run([CHROME, "--headless=new", "--no-pdf-header-footer", "--virtual-time-budget=10000",
+                        "--window-size=1280,1800", f"--print-to-pdf={pdf}", tmp.as_uri()],
+                       check=True, stderr=subprocess.DEVNULL)
+    finally:
+        tmp.unlink(missing_ok=True)
     print(pdf)
 
 

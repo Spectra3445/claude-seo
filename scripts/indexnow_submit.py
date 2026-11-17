@@ -58,7 +58,7 @@ _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 from snapshot_io import bare_host, finding, normalize_url, now_iso, write_json  # noqa: E402
-from url_safety import URLSafetyError, safe_requests_get, validate_url_strict  # noqa: E402
+from url_safety import URLSafetyError, MAX_PAGE_BYTES, safe_requests_get, validate_url_strict  # noqa: E402
 
 # The umbrella endpoint forwards to every participating engine. Individual
 # engine endpoints exist, but api.indexnow.org dispatches automatically.
@@ -69,7 +69,7 @@ _NETWORK_LOCK = threading.Lock()
 
 def _safe_get(url: str, *, timeout: int):
     with _NETWORK_LOCK:
-        return safe_requests_get(url, timeout=timeout)
+        return safe_requests_get(url, timeout=timeout, public_only=True, max_bytes=MAX_PAGE_BYTES)
 
 
 def _normalized_host(value: str) -> str:

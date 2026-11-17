@@ -525,7 +525,7 @@ def af_soup(html):
 
 
 def test_ua_matrix_inconclusive_when_baseline_challenged(monkeypatch):
-    monkeypatch.setattr(ac, "fetch", lambda url, headers=None: _rec(403))
+    monkeypatch.setattr(ac, "fetch", lambda url, headers=None, **kwargs: _rec(403))
     checks, _ = ac.audit_ua_matrix("https://example.com/")
     assert "Inconclusive" in checks[0]["fix"]
 
@@ -577,7 +577,7 @@ def test_decode_uses_meta_charset_when_the_header_has_none():
 
 def test_catch_all_200_is_diagnosed_as_missing_404(monkeypatch):
     html = _rec(200, "<!doctype html><html><body>app</body></html>", {"content-type": "text/html"})
-    monkeypatch.setattr(ac, "fetch", lambda url, headers=None: html)
+    monkeypatch.setattr(ac, "fetch", lambda url, headers=None, **_kwargs: html)
     checks, data = ac.audit_ard("https://e.test", [], {})
     assert checks[0]["status"] == "fail" and checks[0]["priority"] == "P1"
     assert "real 404" in checks[0]["fix"] and data["soft_404"]
@@ -588,7 +588,7 @@ def test_catch_all_200_is_diagnosed_as_missing_404(monkeypatch):
 
 
 def test_real_404_passes_the_probe(monkeypatch):
-    monkeypatch.setattr(ac, "fetch", lambda url, headers=None: _rec(404))
+    monkeypatch.setattr(ac, "fetch", lambda url, headers=None, **_kwargs: _rec(404))
     checks, data = ac.audit_not_found("https://e.test")
     assert checks[0]["status"] == "pass" and data["catch_all_200"] is False
 

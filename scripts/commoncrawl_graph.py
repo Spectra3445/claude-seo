@@ -22,7 +22,7 @@ import os
 import re
 import sys
 import time
-from typing import Optional
+from typing import NamedTuple, Optional
 
 try:
     import requests
@@ -45,6 +45,8 @@ CC_GRAPH_BASE = "https://data.commoncrawl.org/projects/hyperlinkgraph"
 # Common Crawl's own list of published web graphs, newest first. Read at
 # run time so a new release is picked up without editing this file.
 CC_GRAPHINFO_URL = "https://index.commoncrawl.org/graphinfo.json"
+MAX_DECOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
+MAX_GZIP_LINE_CHARS = 1024 * 1024
 
 # Fallback when graphinfo.json cannot be read (newest first).
 # Naming convention: cc-main-YYYY-mon-mon-mon (lowercase month abbreviations).
@@ -196,8 +198,13 @@ def _save_cache(domain: str, release: str, data: dict) -> None:
         json.dump(data, f, indent=2)
 
 
+class GraphScanResult(NamedTuple):
+    matches: list[list[str]]
+    stop_reason: Optional[str] = None
+
+
 def _stream_gz_chunked(url: str, target_domain: str, timeout: int = 120,
-                        max_lines: int = 0) -> list:
+                        max_lines: int = 0) -> GraphScanResult:
     """
     Stream a gzipped file and filter for lines matching the target domain.
 
@@ -212,13 +219,15 @@ def _stream_gz_chunked(url: str, target_domain: str, timeout: int = 120,
         max_lines: Maximum matching lines to return (0 = unlimited).
 
     Returns:
-        List of matching lines (tab-separated field lists).
+        Matching lines and a stop reason when the scan was incomplete.
     """
     import zlib
 
     matches = []
     max_compressed_bytes = 500 * 1024 * 1024  # 500 MiB safety cap
     total_downloaded = 0
+    total_decompressed = 0
+    resp = None
 
     try:
         resp = requests.get(url, stream=True, timeout=timeout)
@@ -231,36 +240,44 @@ def _stream_gz_chunked(url: str, target_domain: str, timeout: int = 120,
         for chunk in resp.iter_content(chunk_size=256 * 1024):  # 256 KiB chunks
             total_downloaded += len(chunk)
             if total_downloaded > max_compressed_bytes:
-                break
+                return GraphScanResult(matches, "compressed graph limit reached")
 
-            try:
-                text = decompressor.decompress(chunk).decode("utf-8", errors="replace")
-            except zlib.error:
-                break
-
-            text = leftover + text
-            lines = text.split("\n")
-            leftover = lines[-1]  # Incomplete last line carries over
-
-            for line in lines[:-1]:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                fields = line.split("\t")
-                for field in fields:
-                    if field == target_domain or field.endswith(f".{target_domain}"):
+            while chunk:
+                decoded = decompressor.decompress(chunk, 1024 * 1024)
+                chunk = decompressor.unconsumed_tail
+                allowed = MAX_DECOMPRESSED_BYTES - total_decompressed
+                capped = len(decoded) > allowed
+                if capped:
+                    decoded = decoded[:max(allowed, 0)]
+                total_decompressed += len(decoded)
+                text = decoded.decode("utf-8", errors="replace")
+                lines = (leftover + text).split("\n")
+                leftover = lines[-1]
+                for line in lines[:-1]:
+                    if len(line) > MAX_GZIP_LINE_CHARS:
+                        return GraphScanResult(matches, "graph line limit reached")
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    fields = line.split("\t")
+                    if any(field == target_domain or field.endswith(f".{target_domain}") for field in fields):
                         matches.append(fields)
-                        break
-                if max_lines and len(matches) >= max_lines:
-                    resp.close()
-                    return matches
+                    if max_lines and len(matches) >= max_lines:
+                        return GraphScanResult(matches)
+                if capped:
+                    return GraphScanResult(matches, "decompressed graph limit reached")
+                if len(leftover) > MAX_GZIP_LINE_CHARS:
+                    return GraphScanResult(matches, "graph line limit reached")
 
-    except requests.exceptions.Timeout:
-        pass  # Return whatever we found so far
-    except MemoryError:
-        pass
+        if not decompressor.eof:
+            return GraphScanResult(matches, "truncated graph stream")
+    except (requests.exceptions.RequestException, zlib.error, MemoryError) as exc:
+        return GraphScanResult(matches, f"graph stream failed ({type(exc).__name__})")
+    finally:
+        if resp is not None:
+            resp.close()
 
-    return matches
+    return GraphScanResult(matches)
 
 
 def get_domain_metrics(domain: str, release: Optional[str] = None,
@@ -320,14 +337,17 @@ def get_domain_metrics(domain: str, release: Optional[str] = None,
     # Domains are reversed: com.google = google.com
     rankings_url = _graph_file_url(release, RANKINGS_SUFFIX)
     rankings_data = {}
+    stop_reasons = []
 
     # Reverse domain for matching: google.com -> com.google
     reversed_domain = ".".join(reversed(domain.split(".")))
 
     try:
-        ranking_matches = _stream_gz_chunked(rankings_url, reversed_domain,
-                                              timeout=timeout, max_lines=5)
-        for fields in ranking_matches:
+        ranking_scan = _stream_gz_chunked(rankings_url, reversed_domain,
+                                          timeout=timeout, max_lines=5)
+        if ranking_scan.stop_reason:
+            stop_reasons.append(f"rankings: {ranking_scan.stop_reason}")
+        for fields in ranking_scan.matches:
             if len(fields) >= 6:
                 # fields[4] is the reversed hostname (e.g., com.google)
                 if fields[4] == reversed_domain:
@@ -340,23 +360,28 @@ def get_domain_metrics(domain: str, release: Optional[str] = None,
                     }
                     break
     except Exception as e:
-        rankings_data = {"error": str(e)}
+        stop_reasons.append(f"rankings: {type(e).__name__}")
 
     # If not found in rankings, check vertices file to confirm domain was crawled at all
-    in_rankings = bool(rankings_data.get("pagerank"))
+    in_rankings = bool(rankings_data)
     in_crawl = in_rankings  # If in rankings, definitely in crawl
 
     if not in_rankings:
         vertices_url = _graph_file_url(release, VERTICES_SUFFIX)
         try:
-            vertex_matches = _stream_gz_chunked(vertices_url, reversed_domain,
-                                                 timeout=min(timeout, 60), max_lines=1)
-            in_crawl = len(vertex_matches) > 0
-        except Exception:
-            pass  # Vertices file may be very large; timeout is acceptable
+            vertex_scan = _stream_gz_chunked(vertices_url, reversed_domain,
+                                             timeout=min(timeout, 60), max_lines=1)
+            if vertex_scan.stop_reason:
+                stop_reasons.append(f"vertices: {vertex_scan.stop_reason}")
+            in_crawl = bool(vertex_scan.matches)
+        except Exception as exc:
+            stop_reasons.append(f"vertices: {type(exc).__name__}")
 
     # Build appropriate note based on what we found
-    if in_rankings:
+    incomplete = bool(stop_reasons)
+    if incomplete:
+        note = "Graph scan incomplete; domain presence and metrics could not be confirmed."
+    elif in_rankings:
         note = "Domain-level metrics from CC web graph. Quarterly updates."
     elif in_crawl:
         note = "Domain found in CC crawl but below ranking threshold (too small/new for PageRank rankings)."
@@ -364,7 +389,7 @@ def get_domain_metrics(domain: str, release: Optional[str] = None,
         note = "Domain not found in Common Crawl data. It may be too new, too small, or not yet crawled."
 
     result = {
-        "status": "success",
+        "status": "partial" if incomplete else "success",
         "data": {
             "domain": domain,
             "in_crawl": in_crawl,
@@ -381,12 +406,15 @@ def get_domain_metrics(domain: str, release: Optional[str] = None,
             "source": "commoncrawl",
             "release": release,
             "from_cache": False,
+            "incomplete": incomplete,
+            "stop_reason": "; ".join(stop_reasons) if incomplete else None,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         },
     }
 
     # Cache the result
-    _save_cache(domain, release, result)
+    if not incomplete:
+        _save_cache(domain, release, result)
 
     return result
 
@@ -507,7 +535,7 @@ def main():
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        if result["status"] == "success" and result["data"]:
+        if result["status"] in ("success", "partial") and result["data"]:
             data = result["data"]
             cached = result.get("metadata", {}).get("from_cache", False)
             release = result.get("metadata", {}).get("release", "unknown")
@@ -516,9 +544,14 @@ def main():
             print(f"  PageRank:                  {data.get('pagerank', 'N/A')} (rank #{data.get('pagerank_rank', 'N/A')})")
             print(f"  Harmonic Centrality:       {data.get('harmonic_centrality', 'N/A')} (rank #{data.get('harmonic_centrality_rank', 'N/A')})")
             print(f"  Number of hosts:           {data.get('n_hosts', 'N/A')}")
+            if result["status"] == "partial":
+                print(f"  Status:                    partial")
+                print(f"  In crawl:                  {data.get('in_crawl')}")
+                print(f"  Stopped:                   {result['metadata']['stop_reason']}")
         elif result.get("error"):
             print(f"Error: {result['error']}", file=sys.stderr)
+    return 2 if result["status"] == "partial" else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -72,6 +72,7 @@ from url_safety import (  # noqa: E402
     decode_body,
     json_depth_exceeds,
     safe_requests_get,
+    public_only_for_origin,
 )
 
 CHECKED_ON = "2026-09-23"
@@ -156,13 +157,16 @@ def _site_root(url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def fetch(url: str, *, headers: Optional[dict] = None, timeout: int = 15) -> dict:
+def fetch(url: str, *, headers: Optional[dict] = None, timeout: int = 15,
+          public_only: bool = True, operator_origin: Optional[str] = None) -> dict:
     """GET ``url`` through url_safety and return a small, JSON-safe record."""
     record = {"url": url, "status": None, "headers": {}, "text": "", "final_url": None,
               "error": None}
     try:
         resp = safe_requests_get(url, timeout=timeout, headers=headers or {},
-                                 allow_redirects=True, stream=True)
+                                 allow_redirects=True, stream=True,
+                                 public_only=public_only_for_origin(url, operator_origin)
+                                 if operator_origin else public_only)
         body = resp.raw.read(MAX_BODY + 1, decode_content=True) or b""
         resp.close()
     except URLSafetyError as exc:
@@ -370,7 +374,7 @@ def parse_content_signal(value: str) -> dict:
 
 
 def audit_robots(root: str) -> tuple[list, dict]:
-    rec = fetch(root + "/robots.txt")
+    rec = fetch(root + "/robots.txt", operator_origin=root)
     checks, data = [], {"status": rec["status"], "error": rec["error"]}
     if rec["error"] or rec["status"] is None:
         checks.append(_check("robots-reachable", "robots.txt reachable", "P0", "warn",
@@ -804,11 +808,11 @@ def _lighthouse_llms_txt(status: Optional[int], content: Optional[str]) -> dict:
 
 
 def audit_llms(root: str) -> tuple[list, dict]:
-    rec = fetch(root + "/llms.txt")
+    rec = fetch(root + "/llms.txt", operator_origin=root)
     result = evaluate_llms_txt(rec["status"], rec["text"] if rec["status"] else None,
                                base_url=rec.get("final_url") or root + "/llms.txt",
                                content_type=_ctype(rec))
-    full = fetch(root + "/llms-full.txt")
+    full = fetch(root + "/llms-full.txt", operator_origin=root)
     data = {"status": rec["status"], "content_type": _ctype(rec), "bytes": len(rec["text"]),
             "llms_full_status": full["status"], **result}
     status = {"pass": "pass", "fail": "fail", "not-applicable": "info"}[result["lighthouse"]]
@@ -880,7 +884,7 @@ def js_shell_marker(html: str) -> bool:
 
 
 def audit_page(url: str) -> tuple[list, dict]:
-    rec = fetch(url)
+    rec = fetch(url, operator_origin=url)
     checks, data = [], {"status": rec["status"], "error": rec["error"]}
     if rec["error"] or not rec["status"] or rec["status"] >= 400:
         checks.append(_check("page-reachable", "Page reachable for a plain HTTP client",
@@ -960,7 +964,7 @@ def _webmcp_markup(soup, base: str, data: dict) -> list:
         src = urljoin(base, tag["src"])
         if urlparse(src).netloc != origin:
             continue
-        rec = fetch(src)
+        rec = fetch(src, operator_origin=base)
         fetched += 1
         if rec["status"] == 200:
             sources.append(rec["text"])
@@ -1028,7 +1032,7 @@ def _vary_covers_accept(vary: str) -> bool:
 
 
 def audit_markdown(url: str, page: dict) -> tuple[list, dict]:
-    neg = fetch(url, headers={"Accept": "text/markdown"})
+    neg = fetch(url, headers={"Accept": "text/markdown"}, operator_origin=url)
     neg_ct = _ctype(neg)
     vary_accept = _vary_covers_accept((neg.get("headers") or {}).get("vary", ""))
     negotiated = neg["status"] == 200 and "text/markdown" in neg_ct
@@ -1038,14 +1042,14 @@ def audit_markdown(url: str, page: dict) -> tuple[list, dict]:
                             "content_signal_header": (neg.get("headers") or {}).get("content-signal")}}
     alternates = []
     for alt in (page.get("soup_links") or {}).get("markdown_alternates", [])[:3]:
-        rec = fetch(alt)
+        rec = fetch(alt, operator_origin=url)
         alternates.append({"url": alt, "status": rec["status"], "content_type": _ctype(rec),
                            "ok": rec["status"] == 200 and not _ctype(rec).startswith("text/html")})
     data["alternates"] = alternates
     parsed = urlparse(url)
     sibling = (f"{parsed.scheme}://{parsed.netloc}"
                + (parsed.path.rstrip("/") + ".md" if parsed.path.strip("/") else "/index.md"))
-    sib = fetch(sibling)
+    sib = fetch(sibling, operator_origin=url)
     data["md_sibling"] = {"url": sibling, "status": sib["status"], "content_type": _ctype(sib),
                           "ok": sib["status"] == 200 and not _ctype(sib).startswith("text/html")}
     ok = negotiated or any(a["ok"] for a in alternates) or data["md_sibling"]["ok"]
@@ -1147,7 +1151,7 @@ def audit_ard(root: str, agentmap: list, page: dict) -> tuple[list, dict]:
                   + [root + "/.well-known/ai-catalog.json"])
     signalled = bool(agentmap or links.get("ai_catalog_links"))
     url = candidates[0]
-    rec = fetch(url)
+    rec = fetch(url, operator_origin=root)
     data = {"catalog_url": url, "signalled": signalled, "status": rec["status"],
             "content_type": _ctype(rec)}
     standard = (f"Agentic Resource Discovery (ARD) spec 1.0; checked by Lighthouse 13.5 "
@@ -1184,7 +1188,7 @@ def audit_ard(root: str, agentmap: list, page: dict) -> tuple[list, dict]:
 def audit_well_known(root: str) -> tuple[list, dict]:
     checks, data = [], {}
     for path, label, standard, priority, want in WELL_KNOWN:
-        rec = fetch(root + path)
+        rec = fetch(root + path, operator_origin=root)
         ctype = _ctype(rec)
         row = {"status": rec["status"], "content_type": ctype}
         if rec["status"] == 200 and ctype.startswith("text/html"):
@@ -1227,11 +1231,11 @@ def _challenged(rec: dict) -> bool:
 
 
 def audit_ua_matrix(url: str) -> tuple[list, dict]:
-    baseline = fetch(url, headers={"User-Agent": BROWSER_UA})
+    baseline = fetch(url, headers={"User-Agent": BROWSER_UA}, operator_origin=url)
     rows = {"browser": {"status": baseline["status"], "challenged": _challenged(baseline),
                         "bytes": len(baseline["text"])}}
     for token, ua in UA_STRINGS.items():
-        rec = fetch(url, headers={"User-Agent": ua})
+        rec = fetch(url, headers={"User-Agent": ua}, operator_origin=url)
         rows[token] = {"status": rec["status"], "challenged": _challenged(rec),
                        "bytes": len(rec["text"]), "error": rec["error"]}
     if rows["browser"]["challenged"] or not rows["browser"]["status"]:
@@ -1259,7 +1263,7 @@ def audit_ua_matrix(url: str) -> tuple[list, dict]:
 def audit_not_found(root: str) -> tuple[list, dict]:
     """Does an unknown URL return a real 404? Catch-all 200s break discovery files."""
     probe = f"{root}/claude-seo-404-probe-{os.urandom(4).hex()}"
-    rec = fetch(probe)
+    rec = fetch(probe, operator_origin=root)
     data = {"probe_url": probe, "status": rec["status"], "content_type": _ctype(rec)}
     catch_all = rec["status"] == 200
     data["catch_all_200"] = catch_all

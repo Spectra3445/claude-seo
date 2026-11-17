@@ -743,7 +743,7 @@ def analyze_headers(headers: Optional[dict], set_cookies: Optional[list[str]] = 
 # Fetching (url_safety helpers only) and redirect checks
 # ---------------------------------------------------------------------------
 
-def _fetch(url: str, timeout: float) -> dict:
+def _fetch(url: str, timeout: float, *, public_only: bool = False) -> dict:
     """GET ``url`` through ``safe_requests_get`` and keep headers and hops only.
 
     The body is never read (``stream=True``). The Set-Cookie header is kept
@@ -754,7 +754,8 @@ def _fetch(url: str, timeout: float) -> dict:
                     "tls_error_url": None}
     response = None
     try:
-        response = safe_requests_get(url, timeout=timeout, allow_redirects=True, stream=True)
+        response = safe_requests_get(url, timeout=timeout, allow_redirects=True, stream=True,
+                                     public_only=public_only)
         chain = [*response.history, response]
         record["hops"] = [
             {"url": _clip(hop.url, 500), "status": hop.status_code,
@@ -827,7 +828,7 @@ def check_redirects(url: str, timeout: float = 10.0, primary: Optional[dict] = N
         if primary is not None and _same_url(primary.get("url"), target):
             return primary
         if target not in seen:
-            seen[target] = _fetch(target, timeout)
+            seen[target] = _fetch(target, timeout, public_only=True)
         return seen[target]
 
     # http to https
@@ -872,7 +873,7 @@ def check_redirects(url: str, timeout: float = 10.0, primary: Optional[dict] = N
             www_check["error"] = www_check["error"] or _clip(f"url_safety: {exc}", 300)
         else:
             www_check["sibling_resolves"] = True
-            sibling_record = _fetch(sibling_url, timeout)
+            sibling_record = _fetch(sibling_url, timeout, public_only=True)
             www_check["sibling_final_url"] = sibling_record["final_url"]
             www_check["sibling_tls_error"] = _tls_failed_on(sibling_record, sibling)
             www_check["error"] = www_check["error"] or sibling_record["error"]

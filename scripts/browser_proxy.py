@@ -411,45 +411,63 @@ def _body_length(method: str, status: int, headers: list[tuple[bytes, bytes]]) -
     return int(lengths[0])
 
 
-def _open_tunnel(addresses: tuple[str, ...], host: str, port: int) -> tuple[socket.socket, bytes]:
+def _open_tunnel(addresses: tuple[str, ...], host: str, port: int,
+                 proxy=None) -> tuple[socket.socket, bytes]:
     """Open the TCP stream for a CONNECT to an already validated destination.
 
     Direct: connect to one of the validated addresses. Behind the operator's
     proxy: connect to that proxy and ask it for the tunnel. Returns the
     socket and any bytes the far side sent after the proxy's response head.
     """
-    proxy = upstream_http_proxy(f"https://{_authority(host, port)}/")
+    if proxy is None:
+        proxy = upstream_http_proxy(f"https://{_authority(host, port)}/")
     if proxy is None:
         return _connect(addresses, port), b""
 
     address, proxy_port, authorization = proxy
-    authority = _authority(host, port)
-    head = f"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n"
-    if authorization:
-        head += f"Proxy-Authorization: {authorization}\r\n"
-    upstream = _connect((address,), proxy_port)
-    try:
-        upstream.settimeout(_CONNECT_TIMEOUT)
-        upstream.sendall((head + "\r\n").encode("ascii"))
-        buffered = b""
-        while b"\r\n\r\n" not in buffered:
-            chunk = upstream.recv(4096)
-            if not chunk or len(buffered) > _MAX_CONNECT_RESPONSE:
-                raise OSError("upstream proxy closed or sent an oversized response")
-            buffered += chunk
-        response_head, _, rest = buffered.partition(b"\r\n\r\n")
-        status_line = response_head.split(b"\r\n", 1)[0].split(b" ")
-        if (
-            len(status_line) < 2
-            or not status_line[0].startswith(b"HTTP/1.")
-            or len(status_line[1]) != 3
-            or not status_line[1].startswith(b"2")
-        ):
-            raise OSError("upstream proxy refused the tunnel")
-        return upstream, rest
-    except BaseException:
-        upstream.close()
-        raise
+    deadline = time.monotonic() + _CONNECT_TIMEOUT
+    error = OSError("no validated address reached through the upstream proxy")
+    for index, ip in enumerate(addresses):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        attempt_deadline = min(deadline, time.monotonic() +
+                               max(remaining / (len(addresses) - index), _MIN_CONNECT_SHARE))
+        authority = _authority(ip, port)
+        head = f"CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n"
+        if authorization:
+            head += f"Proxy-Authorization: {authorization}\r\n"
+        upstream = None
+        try:
+            upstream = socket.create_connection((address, proxy_port),
+                                                timeout=max(attempt_deadline - time.monotonic(), 0.001))
+            upstream.settimeout(max(attempt_deadline - time.monotonic(), 0.001))
+            upstream.sendall((head + "\r\n").encode("ascii"))
+            buffered = b""
+            while b"\r\n\r\n" not in buffered:
+                remaining = attempt_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise socket.timeout("upstream CONNECT timed out")
+                upstream.settimeout(remaining)
+                chunk = upstream.recv(4096)
+                if not chunk or len(buffered) > _MAX_CONNECT_RESPONSE:
+                    raise OSError("upstream proxy closed or sent an oversized response")
+                buffered += chunk
+            response_head, _, rest = buffered.partition(b"\r\n\r\n")
+            status_line = response_head.split(b"\r\n", 1)[0].split(b" ")
+            if (
+                len(status_line) < 2
+                or not status_line[0].startswith(b"HTTP/1.")
+                or len(status_line[1]) != 3
+                or not status_line[1].startswith(b"2")
+            ):
+                raise OSError("upstream proxy refused the tunnel")
+            return upstream, rest
+        except OSError as exc:
+            error = exc
+            if upstream is not None:
+                upstream.close()
+    raise error
 
 
 class _ProxyHandler(BaseHTTPRequestHandler):
@@ -590,7 +608,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         return body
 
     def _forward_http(self) -> None:
-        """Forward one absolute-form plain-HTTP request to its destination.
+        """Forward one plain-HTTP request to its destination.
 
         The destination comes from the request target alone; the client's
         Host header is discarded and rebuilt. A refusal is answered with this
@@ -624,13 +642,7 @@ class _ProxyHandler(BaseHTTPRequestHandler):
 
         target = (parsed.path or "/") + (f"?{parsed.query}" if parsed.query else "")
         host_header = _authority(host, port, default_port=80)
-        if proxy is None:
-            peers, peer_port = _as_addresses(pinned), port
-        else:
-            # The operator's proxy takes the absolute form and resolves the
-            # (already validated) host itself.
-            peers, peer_port = (proxy[0],), proxy[1]
-            target = f"http://{host_header}{target}"
+        peers, peer_port = _as_addresses(pinned), port
 
         # Headers the client marked as hop-by-hop are not forwarded either.
         listed = ",".join(self.headers.get_all("Connection") or [])
@@ -645,7 +657,11 @@ class _ProxyHandler(BaseHTTPRequestHandler):
         connection.auto_open = 0
         in_flight = False
         try:
-            connection.sock = _connect(peers, peer_port)
+            early = b""
+            if proxy is None:
+                connection.sock = _connect(peers, peer_port)
+            else:
+                connection.sock, early = _open_tunnel(peers, host, port, proxy)
             connection.sock.settimeout(_HTTP_IO_TIMEOUT)
             connection.putrequest(
                 self.command, target, skip_host=True, skip_accept_encoding=True
@@ -655,13 +671,12 @@ class _ProxyHandler(BaseHTTPRequestHandler):
                     connection.putheader(key, value)
             connection.putheader("Host", host_header)
             connection.putheader("Connection", "close")
-            if proxy is not None and proxy[2]:
-                connection.putheader("Proxy-Authorization", proxy[2])
             if body or self.command in ("POST", "PUT", "PATCH"):
                 connection.putheader("Content-Length", str(len(body)))
             connection.endheaders(body or None)
 
             reader = _OriginReader(connection.sock, self.connection)
+            reader._buffer.extend(early)
             # The whole head, informational responses included, under one
             # deadline. The body after it may take as long as it likes while
             # bytes keep coming (downloads, streams) and the client stays.

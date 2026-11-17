@@ -59,8 +59,26 @@ def _isolated_credentials(monkeypatch, tmp_path):
 def _mock_response(status_code: int, body, headers=None) -> Mock:
     resp = Mock(status_code=status_code, text=json.dumps(body))
     resp.json.return_value = body
+    resp.iter_content.side_effect = lambda chunk_size: iter([json.dumps(body).encode()])
     resp.headers = headers or {}
     return resp
+
+
+def test_post_to_instance_closes_streamed_response():
+    response = _mock_response(200, {"value": "5.13.0"})
+    with _patch_session(response) as (session, _):
+        assert matomo_auth.post_to_instance("https://m.test", {"method": "X"}) is response
+    assert session.post.call_args.kwargs["stream"] is True
+    response.close.assert_called_once()
+
+
+def test_post_to_instance_rejects_oversized_decoded_body_and_closes(monkeypatch):
+    response = _mock_response(200, {"value": "5.13.0"})
+    monkeypatch.setattr(matomo_auth, "MAX_PAGE_BYTES", 5)
+    with _patch_session(response):
+        with pytest.raises(matomo_auth.MatomoRequestRefused, match="Decoded response exceeds"):
+            matomo_auth.post_to_instance("https://m.test", {"method": "X"})
+    response.close.assert_called_once()
 
 
 @contextlib.contextmanager

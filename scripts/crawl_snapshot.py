@@ -41,7 +41,8 @@ from snapshot_io import (  # noqa: E402
     snapshot_filename,
     write_json,
 )
-from url_safety import DEFAULT_USER_AGENT, decode_body, safe_requests_get, validate_url_strict  # noqa: E402
+from url_safety import (DEFAULT_USER_AGENT, decode_body, public_only_for_origin,
+                        safe_requests_get, validate_url_strict)  # noqa: E402
 
 MAX_BODY = 3 * 1024 * 1024
 STATIC_EXTENSIONS = {
@@ -89,7 +90,7 @@ STATIC_EXTENSIONS = {
 _FETCH_LOCK = threading.Lock()
 
 
-def fetch(url, timeout=30, user_agent=None):
+def fetch(url, timeout=30, user_agent=None, *, public_only=True):
     """Replaceable SSRF-safe GET, without redirect following."""
     with _FETCH_LOCK:
         started = time.perf_counter()
@@ -98,6 +99,7 @@ def fetch(url, timeout=30, user_agent=None):
             timeout=timeout,
             allow_redirects=False,
             stream=True,
+            public_only=public_only,
             headers={"User-Agent": user_agent or DEFAULT_USER_AGENT},
         )
     body = bytearray()
@@ -306,7 +308,8 @@ def seed_urls(start, args, host, origin):
     robots_record = {"url": origin + "/robots.txt", "status": None, "bytes": 0, "text": None}
     if not args.no_robots:
         try:
-            rr = fetch(origin + "/robots.txt", args.timeout, args.user_agent)
+            rr = fetch(origin + "/robots.txt", args.timeout, args.user_agent,
+                       public_only=public_only_for_origin(origin + "/robots.txt", origin))
             robots_status = rr["status"]
             robots_record.update(
                 status=robots_status,
@@ -343,7 +346,8 @@ def seed_urls(start, args, host, origin):
             if sitemap_url in checked or not is_internal(sitemap_url, host):
                 continue
             checked.add(sitemap_url)
-            response = fetch(sitemap_url, args.timeout, args.user_agent)
+            response = fetch(sitemap_url, args.timeout, args.user_agent,
+                             public_only=public_only_for_origin(sitemap_url, origin))
             if response["status"] != 200:
                 continue
             import xml.etree.ElementTree as ET
@@ -371,7 +375,7 @@ def seed_urls(start, args, host, origin):
     return robots, list(dict.fromkeys(urls)), robots_status, robots_record
 
 
-def fetch_record(url, host, robots, args):
+def fetch_record(url, host, robots, args, operator_url=None):
     """Fetch and parse one URL; return its record and discovered targets."""
     if not args.no_robots and not robots.can_fetch(args.user_agent or DEFAULT_USER_AGENT, url):
         return (
@@ -390,7 +394,8 @@ def fetch_record(url, host, robots, args):
         )
     for attempt in range(2):
         try:
-            response = fetch(url, args.timeout, args.user_agent)
+            response = fetch(url, args.timeout, args.user_agent,
+                             public_only=public_only_for_origin(url, operator_url or ""))
             if response["status"] == 429 and not attempt:
                 time.sleep(5)
                 continue
@@ -506,7 +511,7 @@ def crawl_site(start, args):
             if u not in pages:
                 batch.append(u)
         with ThreadPoolExecutor(max_workers=max(1, args.concurrency)) as pool:
-            futures = [pool.submit(fetch_record, u, host, robots, args) for u in batch]
+            futures = [pool.submit(fetch_record, u, host, robots, args, start) for u in batch]
             for u, f in zip(batch, futures):
                 try:
                     key, p, targets = f.result()

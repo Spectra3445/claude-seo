@@ -30,6 +30,21 @@ if _SCRIPTS not in sys.path:
 import transport_check as tc  # noqa: E402
 from url_safety import URLSafetyError  # noqa: E402
 
+
+def test_derived_transport_variants_are_public_only(monkeypatch):
+    fetched = []
+
+    def fake(url, _timeout, *, public_only=False):
+        fetched.append((url, public_only))
+        return {"url": url, "final_url": url, "hops": [], "error": None,
+                "tls_error_url": None, "status": 200}
+
+    monkeypatch.setattr(tc, "_fetch", fake)
+    monkeypatch.setattr(tc, "validate_url_strict", lambda url: (url, "93.184.216.34"))
+    tc.check_redirects("https://example.com/page")
+    assert fetched
+    assert all(public_only for _url, public_only in fetched)
+
 PUBLIC_IP = "93.184.216.34"
 NOW = datetime(2026, 6, 1, tzinfo=timezone.utc).timestamp()
 DAY = 86400

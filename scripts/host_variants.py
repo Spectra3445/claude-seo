@@ -35,7 +35,8 @@ def probe_host_variants(origin: str, fetcher=None) -> list[dict]:
         current, hops, unknown = variant, 0, False
         try:
             for hops in range(MAX_HOPS + 1):
-                response = fetcher(current, timeout=8, allow_redirects=False)
+                response = fetcher(current, timeout=8, allow_redirects=False, stream=True,
+                                   public_only=True)
                 status = response.status_code
                 headers = {str(k).lower(): v for k, v in response.headers.items()}
                 if hasattr(response, "close"):

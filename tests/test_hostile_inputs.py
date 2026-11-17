@@ -37,7 +37,7 @@ def test_deeply_nested_catalog_is_a_finding_not_a_crash():
 
 
 def test_deeply_nested_well_known_document_is_a_finding(monkeypatch):
-    monkeypatch.setattr(ac, "fetch", lambda url, headers=None: _rec(200, DEEP, {"content-type": "application/json"}))
+    monkeypatch.setattr(ac, "fetch", lambda url, headers=None, **_kwargs: _rec(200, DEEP, {"content-type": "application/json"}))
     checks, _ = ac.audit_well_known("https://e.test")
     assert all(c["status"] == "fail" for c in checks)
 
@@ -50,7 +50,7 @@ def test_json_depth_limit_is_independent_of_stack_size(monkeypatch):
         f"malformed JSON: nested deeper than {ac.MAX_JSON_DEPTH} levels"]
     assert ac.validate_ai_catalog(shallow)["errors"] == ["root must be a JSON object"]
     for body, valid in ((too_deep, False), (shallow, True)):
-        monkeypatch.setattr(ac, "fetch", lambda url, headers=None, body=body: _rec(
+        monkeypatch.setattr(ac, "fetch", lambda url, headers=None, body=body, **_kwargs: _rec(
             200, body, {"content-type": "application/json"}))
         checks, data = ac.audit_well_known("https://e.test")
         assert all(row["valid_json"] is valid for row in data.values())
@@ -81,12 +81,14 @@ def test_ucp_profile_hostile_shapes_do_not_crash():
     parsed = ucp_check.parse_profile(json.dumps(profile))
     assert "endpoint-not-a-string" in parsed["services"][0]["issues"]
     with patch.object(ucp_check, "safe_requests_get") as get, \
-         patch.object(ucp_check, "validate_url_strict", return_value=("https://e.test/.well-known/ucp", "1.2.3.4")), \
+         patch.object(ucp_check, "validate_url_strict", return_value=("https://e.test/.well-known/ucp", "1.2.3.4")) as validate, \
          patch.object(ucp_check, "probe_endpoint", return_value={"url": "p"}):
         get.return_value.status_code = 200
         get.return_value.content = json.dumps(profile).encode()
         get.return_value.headers = {"Content-Type": "application/json"}
         report = ucp_check.audit_site("https://e.test", probe_endpoints=True)
+        validate.assert_called_once_with("https://e.test/.well-known/ucp")
+        assert get.call_args.kwargs["public_only"] is False
     assert report["profile_present"]
 
 

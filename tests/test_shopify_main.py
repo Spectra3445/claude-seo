@@ -8,6 +8,7 @@ error paths for filters and redirects. No test touches the network.
 from __future__ import annotations
 
 import contextlib
+import concurrent.futures
 import importlib.util
 import json
 import sys
@@ -148,6 +149,40 @@ def test_unsigned_crawl_is_capped_and_respects_robots(run) -> None:
     assert store.signed_calls() == []
     assert "concurrency 2, delay 1.0s" in err
     assert "no page cap" not in err
+
+
+def test_page_futures_are_submitted_in_bounded_batches(run, monkeypatch) -> None:
+    submitted = 0
+    real_wait = concurrent.futures.wait
+
+    class Pool:
+        def __init__(self, max_workers):
+            self.limit = max_workers * 2
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            pass
+
+        def submit(self, fn, *args):
+            nonlocal submitted
+            submitted += 1
+            assert submitted <= self.limit
+            future = concurrent.futures.Future()
+            future.set_result(fn(*args))
+            return future
+
+    def counted_wait(*args, **kwargs):
+        nonlocal submitted
+        submitted = 0
+        return real_wait(*args, **kwargs)
+
+    monkeypatch.setattr(crawl.futures, "ThreadPoolExecutor", Pool)
+    monkeypatch.setattr(crawl.futures, "wait", counted_wait)
+    code, summary, _ = run(_Store(products=20))
+    assert code == 0
+    assert summary["pages_crawled"] == 20
 
 
 def test_invalid_signature_block_is_not_sent_and_keeps_the_unsigned_limits(run) -> None:

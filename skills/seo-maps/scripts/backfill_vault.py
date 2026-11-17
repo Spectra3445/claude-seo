@@ -311,8 +311,7 @@ def main():
     dupes = len(runs) - len(ids)
     final = list(ids.values())
     bad = [(r, maps_grid_db.validate(r)) for r in final if maps_grid_db.validate(r)]
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in final))
+    maps_grid_db.write_private(OUT, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in final))
     by = {}
     for r in final:
         by.setdefault(r["client"], [0, 0, set()])
@@ -330,8 +329,9 @@ def main():
         print("  - " + s)
     print(f"wrote {OUT}")
     if "--load" in sys.argv:
-        maps_grid_db.push(final)
-        print(f"loaded {len(final)} runs")
+        valid = [r for r in final if not maps_grid_db.validate(r)]
+        maps_grid_db.push(valid)
+        print(f"loaded {len(valid)} runs")
 
 
 if __name__ == "__main__":

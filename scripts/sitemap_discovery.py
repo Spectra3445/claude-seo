@@ -58,7 +58,8 @@ _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
-from url_safety import URLSafetyError, read_bounded, safe_requests_session, validate_url  # noqa: E402
+from url_safety import (URLSafetyError, public_only_for_origin, read_bounded,
+                        safe_requests_session, validate_url)  # noqa: E402
 
 COMMON_PATHS = (
     "/sitemap.xml",
@@ -140,7 +141,7 @@ def _origin(url: str) -> str:
     return urlunparse((parsed.scheme, netloc, "", "", "", ""))
 
 
-def _bounded_fetch(url: str, max_bytes: int) -> dict:
+def _bounded_fetch(url: str, max_bytes: int, *, public_only: bool = True) -> dict:
     """Fetch at most max_bytes after decompression without exposing response text."""
     result = {
         "status_code": None,
@@ -151,7 +152,7 @@ def _bounded_fetch(url: str, max_bytes: int) -> dict:
         "error": None,
     }
     try:
-        with safe_requests_session(url) as session:
+        with safe_requests_session(url, public_only=public_only) as session:
             response = session.get(
                 url,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/xml,text/xml,text/plain,*/*"},
@@ -323,13 +324,14 @@ def _read_body(fetched: dict) -> dict:
     return body
 
 
-def _fetch_sitemap(url: str) -> tuple[dict, dict | None, str | None]:
+def _fetch_sitemap(url: str, origin: str) -> tuple[dict, dict | None, str | None]:
     """Fetch one sitemap candidate through the bounded, validated fetch.
 
     Returns (fetched, body, error). The body is None when nothing usable came
     back: a refused or failed request, an oversized body, or a non-2xx status.
     """
-    fetched = _bounded_fetch(url, MAX_SITEMAP_BYTES)
+    fetched = _bounded_fetch(url, MAX_SITEMAP_BYTES,
+                             public_only=public_only_for_origin(url, origin))
     if fetched["error"]:
         return fetched, None, fetched["error"]
     if fetched["too_large"]:
@@ -487,8 +489,9 @@ class _Expansion:
     within-file duplicate. No entry is counted both ways.
     """
 
-    def __init__(self, sample_size: int) -> None:
+    def __init__(self, sample_size: int, origin: str) -> None:
         self.sample_size = sample_size
+        self.origin = origin
         self.files: list[dict] = []
         # Fetched and final URL of every sitemap request so far, with its kind.
         self.kinds: dict[str, str | None] = {}
@@ -539,7 +542,7 @@ class _Expansion:
                     skipped += 1
                     continue
                 fetched_count += 1
-                fetched, body, error = _fetch_sitemap(loc)
+                fetched, body, error = _fetch_sitemap(loc, self.origin)
                 kind = body["kind"] if body else None
                 final_url = fetched["final_url"]
                 self.kinds[loc] = kind
@@ -772,7 +775,8 @@ def discover_sitemaps(
     result["target"] = origin
     robots_url = f"{origin}/robots.txt"
     result["robots_url"] = robots_url
-    robots = _bounded_fetch(robots_url, MAX_ROBOTS_BYTES)
+    robots = _bounded_fetch(robots_url, MAX_ROBOTS_BYTES,
+                            public_only=public_only_for_origin(robots_url, origin))
     declared_raw = []
     if robots["error"]:
         result["warnings"].append("robots.txt could not be fetched safely")
@@ -802,7 +806,7 @@ def discover_sitemaps(
             seen.add(candidate)
             deduped.append(candidate)
 
-    expansion = _Expansion(sample_size) if expand else None
+    expansion = _Expansion(sample_size, origin) if expand else None
     target_host = urlparse(origin).hostname
     # Several paths can redirect to one sitemap (/sitemap.xml to
     # /sitemap_index.xml): list each file once, by its final URL.
@@ -826,7 +830,7 @@ def discover_sitemaps(
         if urlparse(candidate).hostname != target_host and candidate in declared_raw:
             entry["cross_host"] = True
 
-        fetched, body, entry["error"] = _fetch_sitemap(candidate)
+        fetched, body, entry["error"] = _fetch_sitemap(candidate, origin)
         entry["status_code"] = fetched["status_code"]
         if body is not None:
             if body["gzip"]:

@@ -78,9 +78,12 @@ def ascii_heatmap(run):
              f'centre {run["center_lat"]:.5f},{run["center_lng"]:.5f}   (N up, W left, . = not in top 20)']
     for i, row in enumerate(grid):
         lines.append("".join(row) + ("   <- pin" if i == mid else ""))
-    avg, solv = maps_grid_db.metrics(run["cells"])
+    expected = run["grid_size"] ** 2
+    avg, solv = maps_grid_db.metrics(run["cells"], expected)
     ranked = sum(1 for c in run["cells"] if c.get("rank"))
-    lines.append(f"SoLV {solv}% · ranked {ranked}/{len(run['cells'])} · avg rank {avg}")
+    lines.append(f"SoLV {solv if solv is not None else 'partial'}{'%' if solv is not None else ''}"
+                 f" · ranked {ranked}/{len(run['cells'])} · coverage {len(run['cells'])}/{expected}"
+                 f" · avg rank {avg if avg is not None else 'partial'}")
     return "\n".join(lines)
 
 
@@ -142,7 +145,8 @@ def cmd_run(a):
                      "cid": a.cid, "center_lat": lat, "center_lng": lng, "grid_size": a.grid,
                      "spacing_km": a.spacing_km, "zoom": a.zoom, "device": a.device,
                      "cost_usd": round(cost / len(a.keyword), 4), "source": "seo-maps",
-                     "run_context": a.context, "run_at": run_at, "cells": cells})
+                     "run_context": a.context, "run_at": run_at, "cells": cells,
+                     "expected_cells": a.grid * a.grid, "received_cells": len(cells)})
     run_stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out = Path(a.out) / f"grid-{a.client}-{run_stamp}-{uuid.uuid4().hex[:8]}.json"
     out.write_text(json.dumps({"runs": runs}, ensure_ascii=False, indent=1))

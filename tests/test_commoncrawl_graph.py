@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
+import gzip
 
 import pytest
 
@@ -145,3 +146,88 @@ def test_latest_release_falls_back_when_graphinfo_unreachable(monkeypatch):
     monkeypatch.setattr(ccg.requests, "get", boom)
     monkeypatch.setattr(ccg.requests, "head", _head_ok_for({ccg.KNOWN_RELEASES[1]}))
     assert ccg._get_latest_release() == ccg.KNOWN_RELEASES[1]
+
+
+def test_gzip_graph_caps_decoded_bytes_and_closes_stream(monkeypatch):
+    class Stream:
+        closed = False
+
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, chunk_size):
+            yield gzip.compress(b"x" * 1000 + b"\ncom.example\t1\n")
+
+        def close(self):
+            self.closed = True
+
+    stream = Stream()
+    monkeypatch.setattr(ccg.requests, "get", lambda *_a, **_kw: stream)
+    monkeypatch.setattr(ccg, "MAX_DECOMPRESSED_BYTES", 64)
+    result = ccg._stream_gz_chunked("https://data.commoncrawl.org/graph.gz", "com.example")
+    assert result.matches == []
+    assert result.stop_reason == "decompressed graph limit reached"
+    assert stream.closed
+
+
+def test_incomplete_graph_scan_is_reported_and_never_cached(monkeypatch):
+    monkeypatch.setattr(ccg, "_stream_gz_chunked", lambda *_a, **_kw: ccg.GraphScanResult(
+        [], "decompressed graph limit reached"))
+    monkeypatch.setattr(ccg, "_save_cache", lambda *_a: pytest.fail("incomplete result cached"))
+    result = ccg.get_domain_metrics("example.com", release="cc-main-2026-nov", force_update=True)
+    assert result["status"] == "partial"
+    assert result["metadata"]["incomplete"] is True
+    assert result["data"]["in_crawl"] is False
+    assert "incomplete" in result["data"]["note"]
+
+
+def test_cap_preserves_exact_rank_row_and_partial_metrics(monkeypatch):
+    import zlib
+    row = b"1\t2.5\t3\t0.8\tcom.example\t7\n"
+    compressor = zlib.compressobj(wbits=zlib.MAX_WBITS | 16)
+    chunks = [compressor.compress(row) + compressor.flush(zlib.Z_SYNC_FLUSH),
+              compressor.compress(b"x" * 1000) + compressor.flush(zlib.Z_FINISH)]
+    class Stream:
+        def raise_for_status(self):
+            pass
+        def iter_content(self, chunk_size):
+            yield from chunks
+        def close(self):
+            pass
+    monkeypatch.setattr(ccg.requests, "get", lambda *_a, **_kw: Stream())
+    monkeypatch.setattr(ccg, "MAX_DECOMPRESSED_BYTES", len(row) + 16)
+    monkeypatch.setattr(ccg, "_save_cache", lambda *_a: pytest.fail("partial rank cached"))
+    result = ccg.get_domain_metrics("example.com", release="cc-main-2026-nov", force_update=True)
+    assert result["status"] == "partial"
+    assert result["data"]["in_rankings"] is True
+    assert result["data"]["pagerank"] == 0.8
+    assert "decompressed graph limit" in result["metadata"]["stop_reason"]
+
+
+def test_text_cli_prints_partial_metrics_and_reason(monkeypatch, capsys):
+    monkeypatch.setattr(ccg, "get_domain_metrics", lambda **_kw: {
+        "status": "partial", "data": {"domain": "example.com", "pagerank": 0.8,
+        "in_crawl": True, "pagerank_rank": 3},
+        "metadata": {"release": "cc-main-2026-nov", "stop_reason": "rankings: decompressed graph limit reached"},
+        "error": None})
+    monkeypatch.setattr(sys, "argv", ["commoncrawl_graph.py", "example.com"])
+    assert ccg.main() == 2
+    output = capsys.readouterr().out
+    assert "PageRank:" in output and "0.8" in output
+    assert "Status:" in output and "partial" in output
+    assert "Stopped:" in output and "decompressed graph limit" in output
+
+
+def test_gzip_graph_still_reads_matching_lines(monkeypatch):
+    class Stream:
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, chunk_size):
+            yield gzip.compress(b"com.example\t1\ncom.other\t2\n")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(ccg.requests, "get", lambda *_a, **_kw: Stream())
+    assert ccg._stream_gz_chunked("https://data.commoncrawl.org/graph.gz", "com.example").matches == [["com.example", "1"]]

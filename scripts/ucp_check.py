@@ -43,8 +43,11 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 from url_safety import (  # noqa: E402
     URLSafetyError,
+    MAX_PAGE_BYTES,
     decode_response_text,
+    public_only_for_origin,
     safe_requests_get,
+    validate_public_url_strict,
     validate_url_strict,
 )
 
@@ -190,18 +193,23 @@ def parse_profile(payload: str) -> dict:
     return report
 
 
-def probe_endpoint(url: str, *, timeout: int = 10) -> dict:
+def probe_endpoint(url: str, *, timeout: int = 10, operator_origin: str | None = None) -> dict:
     """GET-probe a declared service endpoint via url_safety (any status below 500 counts as reachable)."""
     out: dict = {"url": url, "reachable": False, "status_code": None, "error": None}
     try:
-        validate_url_strict(url)
+        public_only = public_only_for_origin(url, operator_origin) if operator_origin else True
+        (validate_public_url_strict if public_only else validate_url_strict)(url)
     except URLSafetyError as exc:
         out["error"] = f"ssrf-blocked: {exc}"
         return out
     try:
-        resp = safe_requests_get(url, timeout=timeout, allow_redirects=True)
-        out["status_code"] = resp.status_code
-        out["reachable"] = 200 <= resp.status_code < 500
+        resp = safe_requests_get(url, timeout=timeout, allow_redirects=True,
+                                 public_only=public_only, stream=True)
+        try:
+            out["status_code"] = resp.status_code
+            out["reachable"] = 200 <= resp.status_code < 500
+        finally:
+            resp.close()
     except Exception as exc:
         out["error"] = str(exc)
     return out
@@ -214,7 +222,9 @@ def audit_site(
     timeout: int = 10,
 ) -> dict:
     """Fetch and audit a site's UCP profile. Returns a JSON-serializable dict."""
-    discovery = discovery_url_for(site)
+    operator = site if "://" in site else "https://" + site
+    discovery = discovery_url_for(operator)
+    public_only = public_only_for_origin(discovery, operator)
     report: dict = {
         "site": site,
         "discovery_url": discovery,
@@ -225,12 +235,13 @@ def audit_site(
         "summary": "",
     }
     try:
-        validate_url_strict(discovery)
+        (validate_public_url_strict if public_only else validate_url_strict)(discovery)
     except URLSafetyError as exc:
         report["summary"] = f"discovery-url-blocked-by-url-safety: {exc}"
         return report
     try:
-        resp = safe_requests_get(discovery, timeout=timeout, allow_redirects=True)
+        resp = safe_requests_get(discovery, timeout=timeout, allow_redirects=True,
+                                 public_only=public_only, max_bytes=MAX_PAGE_BYTES)
     except Exception as exc:
         report["summary"] = f"fetch-failed: {exc}"
         return report
@@ -248,7 +259,8 @@ def audit_site(
     if probe_endpoints:
         for endpoint in sorted({svc["endpoint"] for svc in parsed.get("services") or []
                                 if isinstance(svc.get("endpoint"), str) and svc["endpoint"]}):
-            report["endpoint_probes"].append(probe_endpoint(endpoint, timeout=timeout))
+            report["endpoint_probes"].append(probe_endpoint(
+                endpoint, timeout=timeout, operator_origin=operator))
 
     n_caps = len({cap["id"] for cap in parsed.get("capabilities") or []})
     n_issues = len(parsed.get("issues") or []) + sum(

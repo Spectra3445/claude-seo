@@ -886,28 +886,38 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 with pages_file.open(mode, encoding="utf-8") as sink:
                     with futures.ThreadPoolExecutor(max_workers=args.concurrency) as pool:
-                        pending = {pool.submit(crawl_one, sessions.get, url, origin, sig_headers,
-                                               governor, args.timeout, html_dir): url for url in urls}
-                        for future in futures.as_completed(pending):
-                            if governor.aborted and not cancelled:
-                                cancelled = True
-                                for waiting in pending:
-                                    waiting.cancel()
-                                _log(f"  stopping: {RATE_LIMIT_ABORT_STREAK} rate-limit responses in a row")
-                            if future.cancelled():
-                                continue
-                            record = future.result()
-                            if record.pop("aborted", False) and "status" not in record and "error" not in record:
-                                continue
-                            index += 1
-                            sink.write(json.dumps(record, ensure_ascii=False) + "\n")
-                            sink.flush()
-                            records.append(record)
-                            if index % progress_every == 0 or index == len(urls):
-                                elapsed = time.time() - started_at
-                                eta = elapsed / (index / len(urls)) - elapsed
-                                _log(f"  {index}/{len(urls)} ({index / len(urls):.0%}) ETA {eta / 60:.0f} min, "
-                                     f"delay {governor.delay:.2f}s, {governor.hits} rate-limit hits")
+                        remaining = iter(urls)
+                        pending = set()
+                        while True:
+                            while not cancelled and len(pending) < args.concurrency * 2:
+                                url = next(remaining, None)
+                                if url is None:
+                                    break
+                                pending.add(pool.submit(crawl_one, sessions.get, url, origin, sig_headers,
+                                                        governor, args.timeout, html_dir))
+                            if not pending:
+                                break
+                            done, pending = futures.wait(pending, return_when=futures.FIRST_COMPLETED)
+                            for future in done:
+                                if governor.aborted and not cancelled:
+                                    cancelled = True
+                                    for waiting in pending:
+                                        waiting.cancel()
+                                    _log(f"  stopping: {RATE_LIMIT_ABORT_STREAK} rate-limit responses in a row")
+                                if future.cancelled():
+                                    continue
+                                record = future.result()
+                                if record.pop("aborted", False) and "status" not in record and "error" not in record:
+                                    continue
+                                index += 1
+                                sink.write(json.dumps(record, ensure_ascii=False) + "\n")
+                                sink.flush()
+                                records.append(record)
+                                if index % progress_every == 0 or index == len(urls):
+                                    elapsed = time.time() - started_at
+                                    eta = elapsed / (index / len(urls)) - elapsed
+                                    _log(f"  {index}/{len(urls)} ({index / len(urls):.0%}) ETA {eta / 60:.0f} min, "
+                                         f"delay {governor.delay:.2f}s, {governor.hits} rate-limit hits")
             finally:
                 sessions.close()
 

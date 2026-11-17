@@ -37,6 +37,8 @@ if _SCRIPTS_DIR not in sys.path:
 
 from url_safety import (  # noqa: E402  (path bootstrap must run first)
     URLSafetyError,
+    MAX_PAGE_BYTES,
+    bounded_response,
     is_safe_ip,
     safe_requests_session,
 )
@@ -323,7 +325,9 @@ def post_to_instance(endpoint: str, data: dict,
                 headers=headers,
                 timeout=timeout,
                 allow_redirects=False,
+                stream=True,
             )
+            resp = bounded_response(resp, MAX_PAGE_BYTES)
     except URLSafetyError as exc:
         message = redact(exc)
         if resolves_to_private_address(endpoint):

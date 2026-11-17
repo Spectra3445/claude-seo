@@ -116,7 +116,7 @@ class _Origin:
     ``(request_line, headers, body)``.
     """
 
-    def __init__(self, respond=None):
+    def __init__(self, respond=None, *, tunnel=False):
         self.requests: list[tuple[str, dict, bytes]] = []
         origin = self
 
@@ -130,7 +130,22 @@ class _Origin:
                 origin.requests.append((self.requestline, headers, body))
                 (respond or _plain_ok)(self)
 
-            do_GET = do_POST = do_HEAD = do_PUT = do_CONNECT = _handle
+            def do_CONNECT(self):
+                if not tunnel:
+                    return self._handle()
+                origin.requests.append((self.requestline, {k.lower(): [v] for k, v in self.headers.items()}, b""))
+                self.send_response_only(200, "Connection established")
+                self.end_headers()
+                self.wfile.flush()
+                if self.path.endswith(":443"):
+                    return
+                self.raw_requestline = self.rfile.readline(65537)
+                if self.raw_requestline and self.parse_request():
+                    if respond is not None:
+                        self.path = f"http://{self.headers.get('Host')}{self.path}"
+                    self._handle()
+
+            do_GET = do_POST = do_HEAD = do_PUT = _handle
 
             def log_message(self, *_args):
                 pass
@@ -590,8 +605,8 @@ def test_shutdown_does_not_wait_for_an_open_tunnel(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_plain_http_is_chained_in_absolute_form(monkeypatch):
-    upstream = _Origin()
+def test_plain_http_uses_ip_tunnel_and_preserves_virtual_host(monkeypatch):
+    upstream = _Origin(tunnel=True)
     try:
         _map_public_host(monkeypatch, 8080)
         monkeypatch.setattr(
@@ -607,11 +622,13 @@ def test_plain_http_is_chained_in_absolute_form(monkeypatch):
             assert _exchange(proxy, request).startswith(b"HTTP/1.0 200 ")
     finally:
         upstream.close()
-    (request_line, headers, _body), = upstream.requests
-    assert request_line == f"GET http://{PUBLIC_HOST}:8080/p?q=1 HTTP/1.1"
+    (connect_line, connect_headers, _), (request_line, headers, _body) = upstream.requests
+    assert connect_line == "CONNECT 127.0.0.1:8080 HTTP/1.1"
+    assert connect_headers["host"] == ["127.0.0.1:8080"]
+    assert request_line == "GET /p?q=1 HTTP/1.1"
     assert headers["host"] == [f"{PUBLIC_HOST}:8080"]
-    # The operator's credential, never one the page supplied.
-    assert headers["proxy-authorization"] == ["Basic dTpw"]
+    assert connect_headers["proxy-authorization"] == ["Basic dTpw"]
+    assert "proxy-authorization" not in headers
 
 
 def test_connect_is_chained_through_the_upstream_proxy(monkeypatch):
@@ -651,9 +668,44 @@ def test_connect_is_chained_through_the_upstream_proxy(monkeypatch):
     finally:
         listener.close()
     lines = seen["head"].decode().split("\r\n")
-    assert lines[0] == f"CONNECT {PUBLIC_HOST}:443 HTTP/1.1"
-    assert f"Host: {PUBLIC_HOST}:443" in lines
+    assert lines[0] == "CONNECT 127.0.0.1:443 HTTP/1.1"
+    assert "Host: 127.0.0.1:443" in lines
     assert "Proxy-Authorization: Basic dTpw" in lines
+
+
+def test_upstream_connect_retries_the_second_validated_address(monkeypatch):
+    first, second = "93.184.216.34", "93.184.216.35"
+    def answer(handler):
+        handler.send_response_only(502 if handler.path == f"{first}:443" else 200)
+        handler.end_headers()
+    upstream = _Origin(answer)
+    try:
+        _fake_dns(monkeypatch, {PUBLIC_HOST: [first, second]})
+        monkeypatch.setattr(browser_proxy, "upstream_http_proxy",
+                            lambda _url: ("127.0.0.1", upstream.port, None))
+        with browser_proxy.guarded_proxy() as proxy:
+            client, head = _open_tunnel(proxy, f"{PUBLIC_HOST}:443")
+            client.close()
+            assert head.startswith(b"HTTP/1.0 200 ")
+    finally:
+        upstream.close()
+    assert [line for line, _headers, _body in upstream.requests] == [
+        f"CONNECT {first}:443 HTTP/1.1", f"CONNECT {second}:443 HTTP/1.1"]
+
+
+def test_upstream_target_cannot_rebind_after_local_validation(monkeypatch):
+    upstream = _Origin(tunnel=True)
+    try:
+        _behind_local_upstream(monkeypatch, upstream.port)
+        lookups = _fake_dns(monkeypatch, {PUBLIC_HOST: [[_PUBLIC_IP], ["127.0.0.1"]]})
+        with browser_proxy.guarded_proxy() as proxy:
+            assert _ask(proxy, f"GET http://{PUBLIC_HOST}/").endswith(b"origin body")
+    finally:
+        upstream.close()
+    assert lookups.count(PUBLIC_HOST) == 1
+    assert upstream.requests[0][0] == f"CONNECT {_PUBLIC_IP}:80 HTTP/1.1"
+    assert upstream.requests[0][1]["host"] == [f"{_PUBLIC_IP}:80"]
+    assert upstream.requests[1][1]["host"] == [PUBLIC_HOST]
 
 
 def test_upstream_proxy_refusal_is_a_502(monkeypatch):
@@ -2064,7 +2116,7 @@ def _ask(proxy: str, line: str) -> bytes:
 
 
 def test_trusted_local_upstream_carries_plain_http_and_connect(monkeypatch):
-    upstream = _Origin()
+    upstream = _Origin(tunnel=True)
     try:
         _behind_local_upstream(monkeypatch, upstream.port)
         _fake_dns(monkeypatch, {PUBLIC_HOST: _PUBLIC_IP})
@@ -2075,11 +2127,13 @@ def test_trusted_local_upstream_carries_plain_http_and_connect(monkeypatch):
             assert head.startswith(b"HTTP/1.0 200 ")
     finally:
         upstream.close()
-    # The upstream is asked for the name, which it resolves itself.
+    # The upstream gets only validated IPs; the tunneled request keeps Host.
     assert [line for line, _h, _b in upstream.requests] == [
-        f"GET http://{PUBLIC_HOST}/p?q=1 HTTP/1.1",
-        f"CONNECT {PUBLIC_HOST}:443 HTTP/1.1",
+        f"CONNECT {_PUBLIC_IP}:80 HTTP/1.1",
+        "GET /p?q=1 HTTP/1.1",
+        f"CONNECT {_PUBLIC_IP}:443 HTTP/1.1",
     ]
+    assert upstream.requests[1][1]["host"] == [PUBLIC_HOST]
 
 
 @pytest.mark.parametrize(
@@ -2203,7 +2257,7 @@ def test_trusted_upstream_name_is_dialled_at_the_checked_address(monkeypatch):
     """DNS rebinding of the proxy name: each request resolves it once and
     dials an address from that answer. When the answer turns into a metadata
     address the request is refused; nothing is ever sent there."""
-    upstream = _Origin()
+    upstream = _Origin(tunnel=True)
     try:
         _behind_local_upstream(monkeypatch, upstream.port, host="proxy.sandbox")
         lookups = _fake_dns(
@@ -2214,23 +2268,24 @@ def test_trusted_upstream_name_is_dialled_at_the_checked_address(monkeypatch):
             },
         )
         dialled = []
-        real_connect = browser_proxy._connect
+        real_connect = browser_proxy.socket.create_connection
 
-        def connect(addresses, port):
-            dialled.append((tuple(addresses), port))
-            return real_connect(addresses, port)
+        def connect(address, *args, **kwargs):
+            if address[1] == upstream.port:
+                dialled.append(address)
+            return real_connect(address, *args, **kwargs)
 
-        monkeypatch.setattr(browser_proxy, "_connect", connect)
+        monkeypatch.setattr(browser_proxy.socket, "create_connection", connect)
         with browser_proxy.guarded_proxy() as proxy:
             assert _ask(proxy, f"GET http://{PUBLIC_HOST}/first").endswith(b"origin body")
             assert _ask(proxy, f"GET http://{PUBLIC_HOST}/second").startswith(b"HTTP/1.0 403 ")
             assert _ask(proxy, f"CONNECT {PUBLIC_HOST}:443").startswith(b"HTTP/1.0 403 ")
     finally:
         upstream.close()
-    assert dialled == [(("127.0.0.1",), upstream.port)]
+    assert dialled == [("127.0.0.1", upstream.port)]
     assert lookups.count("proxy.sandbox") == 3  # once per request, never twice
     assert [line for line, _h, _b in upstream.requests] == [
-        f"GET http://{PUBLIC_HOST}/first HTTP/1.1"
+        f"CONNECT {_PUBLIC_IP}:80 HTTP/1.1", "GET /first HTTP/1.1"
     ]
 
 
@@ -2287,7 +2342,7 @@ def test_a_trusted_upstream_changes_nothing_about_the_launch(monkeypatch, regula
 
 
 def test_the_guard_credential_is_still_required_behind_a_trusted_upstream(monkeypatch, regular_user):
-    upstream = _Origin()
+    upstream = _Origin(tunnel=True)
     try:
         _behind_local_upstream(monkeypatch, upstream.port)
         _fake_dns(monkeypatch, {PUBLIC_HOST: _PUBLIC_IP})
@@ -2302,7 +2357,7 @@ def test_the_guard_credential_is_still_required_behind_a_trusted_upstream(monkey
             assert answer.endswith(b"origin body")
     finally:
         upstream.close()
-    (_line, headers, _body), = upstream.requests
+    (_connect, _proxy_headers, _), (_line, headers, _body) = upstream.requests
     # The guard's own credential is not passed on to the upstream.
     assert "proxy-authorization" not in headers
 
@@ -2366,7 +2421,7 @@ def test_real_chromium_behind_a_trusted_local_upstream(monkeypatch):
             handler.end_headers()
             handler.wfile.write(body)
 
-        upstream = _Origin(sandbox_proxy)
+        upstream = _Origin(sandbox_proxy, tunnel=True)
         ports["upstream"] = upstream.port
         try:
             _behind_local_upstream(monkeypatch, upstream.port)
@@ -2393,9 +2448,10 @@ def test_real_chromium_behind_a_trusted_local_upstream(monkeypatch):
             upstream.close()
             internal.close()
 
-    asked = [line.split(" ")[1] for line, _h, _b in upstream.requests]
-    assert f"{site}/" in asked and f"{site}/pixel.png" in asked
-    assert f"{site}/redirect-internal" in asked
-    # Everything the upstream was asked to reach is the public site.
-    assert all(url.startswith(site + "/") for url in asked), asked
+    asked = [(line.split(" ")[1], headers.get("host")) for line, headers, _b in upstream.requests
+             if line.startswith("GET ")]
+    assert ("/", [f"{PUBLIC_HOST}:8080"]) in asked
+    assert ("/pixel.png", [f"{PUBLIC_HOST}:8080"]) in asked
+    assert ("/redirect-internal", [f"{PUBLIC_HOST}:8080"]) in asked
+    assert all(host == [f"{PUBLIC_HOST}:8080"] for _path, host in asked), asked
     assert internal.requests == []

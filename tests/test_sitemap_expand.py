@@ -62,7 +62,7 @@ def run(routes, robots=b"", **options):
     """
     fetched = []
 
-    def fake_fetch(url, _limit):
+    def fake_fetch(url, _limit, **_kwargs):
         fetched.append(url)
         if url == SITE + "/robots.txt":
             return response(robots, url, content_type="text/plain")
@@ -503,7 +503,7 @@ def test_feeds_count_their_item_links():
 def test_cli_prints_expanded_json_and_validates_flags(capsys):
     routes = {SITE + "/sitemap.xml": urlset(SITE + "/a", SITE + "/b")}
 
-    def fake_fetch(url, _limit):
+    def fake_fetch(url, _limit, **_kwargs):
         return response(routes[url], url) if url in routes else response(url=url, status=404)
 
     with patch.object(discovery, "_bounded_fetch", side_effect=fake_fetch):

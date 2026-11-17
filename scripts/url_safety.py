@@ -150,6 +150,7 @@ __all__ = [
     "validate_public_url_strict",
     "validate_public_url_addresses",
     "safe_requests_get",
+    "bounded_response",
     "safe_requests_head",
     "safe_requests_session",
     "make_safe_playwright_route_handler",
@@ -716,12 +717,23 @@ def validate_public_url_strict(url: str) -> tuple[str, str]:
     """
     :func:`validate_url_strict` without ``CLAUDE_SEO_LOCAL_TARGETS``.
 
-    For every URL that is not the operator's own top-level target: a
-    redirect hop that will be sent through an HTTP proxy, and every
-    connection the browser egress guard opens. Every resolved address must
-    be public; the allowlist is never read.
+    For destinations outside the operator's origin, redirect hops sent
+    through an HTTP proxy, and every connection the browser egress guard
+    opens. Every resolved address must be public; the allowlist is never read.
     """
     return _validate_url_strict(url, local_targets=False)
+
+
+def public_only_for_origin(url: str, operator_url: str) -> bool:
+    """Require public addresses unless URL shares the operator's scheme, host and port."""
+    try:
+        target, operator = urlparse(url), urlparse(operator_url)
+        def origin(parts):
+            return (parts.scheme.lower(), normalize_hostname(parts.hostname or ""),
+                    parts.port or (443 if parts.scheme.lower() == "https" else 80))
+        return origin(target) != origin(operator)
+    except (URLSafetyError, ValueError):
+        return True
 
 
 def validate_public_url_addresses(url: str) -> tuple[str, tuple[str, ...]]:
@@ -1446,6 +1458,19 @@ def read_bounded(response, max_bytes: int) -> tuple[bytes, bool]:
     return raw, too_large
 
 
+def bounded_response(response, max_bytes: int = MAX_PAGE_BYTES):
+    """Fill a streamed response under a decoded-byte cap, then close it."""
+    try:
+        body, too_large = read_bounded(response, max_bytes)
+        if too_large:
+            raise ResponseTooLarge(f"Decoded response exceeds {max_bytes} bytes")
+        response._content = body
+        response._content_consumed = True
+        return response
+    finally:
+        response.close()
+
+
 def read_bounded_until(
     response, max_bytes: int, deadline: float
 ) -> tuple[bytes, bool, bool]:
@@ -1596,6 +1621,10 @@ class ProxiedRequestRefused(URLSafetyError, requests.exceptions.ConnectionError)
     """
 
 
+class ResponseTooLarge(URLSafetyError, requests.exceptions.RequestException):
+    """A decoded response exceeded its configured byte limit."""
+
+
 class _ProxyGuardSession(requests.Session):
     """A ``Session`` that validates every request it sends through a proxy.
 
@@ -1659,7 +1688,7 @@ def _proxy_configured(proxies: Optional[dict]) -> bool:
     return bool(proxies) or bool(requests.utils.getproxies())
 
 
-def _pinned_request(method: str, url: str, **kwargs):  # type: ignore[no-untyped-def]
+def _pinned_request(method: str, url: str, *, public_only: bool = False, **kwargs):  # type: ignore[no-untyped-def]
     """``requests.get`` / ``requests.head``, guarding hops sent through a proxy.
 
     With no proxy configured this is the plain ``requests`` call it always
@@ -1669,7 +1698,7 @@ def _pinned_request(method: str, url: str, **kwargs):  # type: ignore[no-untyped
     if not _proxy_configured(kwargs.get("proxies")):
         return getattr(requests, method)(url, **kwargs)
     kwargs.setdefault("allow_redirects", method != "head")
-    with _ProxyGuardSession(url) as session:
+    with _ProxyGuardSession(url, public_only=public_only) as session:
         return session.request(method, url, **kwargs)
 
 
@@ -1677,6 +1706,8 @@ def safe_requests_get(
     url: str,
     *,
     timeout: int = 30,
+    public_only: bool = False,
+    max_bytes: Optional[int] = None,
     **kwargs,
 ) -> requests.Response:
     """
@@ -1687,14 +1718,18 @@ def safe_requests_get(
     except that browser-like default headers are supplied for any header
     the caller did not set (see ``DEFAULT_REQUEST_HEADERS``).
     """
-    norm_url, pinned_ip = validate_url_strict(url)
+    validate = validate_public_url_strict if public_only else validate_url_strict
+    norm_url, pinned_ip = validate(url)
     parsed = urlparse(norm_url)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     assert parsed.hostname is not None  # validate_url_strict guarantees this
     kwargs = _with_redirect_body_cap(_with_default_headers(kwargs))
+    if max_bytes is not None:
+        kwargs["stream"] = True
     exempt = _validated_proxy_hosts(norm_url, kwargs.get("proxies"))
     with _pin_dns(parsed.hostname, pinned_ip, port, exempt_hosts=exempt):
-        return _pinned_request("get", norm_url, timeout=timeout, **kwargs)
+        response = _pinned_request("get", norm_url, timeout=timeout, public_only=public_only, **kwargs)
+        return bounded_response(response, max_bytes) if max_bytes is not None else response
 
 
 def safe_requests_head(

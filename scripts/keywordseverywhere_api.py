@@ -38,6 +38,8 @@ try:
     from backlinks_auth import get_keywordseverywhere_api_key
     from url_safety import (
         URLSafetyError,
+        MAX_PAGE_BYTES,
+        bounded_response,
         normalize_hostname,
         safe_requests_session,
         validate_url,
@@ -71,7 +73,7 @@ def normalize_domain(raw: str) -> Optional[str]:
 def _post(url: str, **kwargs):
     """POST through a DNS-pinned url_safety session; redirects are refused."""
     with safe_requests_session(url) as session:
-        return session.post(url, allow_redirects=False, **kwargs)
+        return bounded_response(session.post(url, allow_redirects=False, stream=True, **kwargs), MAX_PAGE_BYTES)
 
 
 def get_rank(domains: list, api_key: str) -> dict:

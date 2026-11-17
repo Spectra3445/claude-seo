@@ -28,6 +28,18 @@ if _SCRIPTS not in sys.path:
 pytest.importorskip("requests")
 import url_safety  # noqa: E402
 
+
+@pytest.mark.parametrize("url,public_only", [
+    ("http://127.0.0.1:3000/robots.txt", False),
+    ("http://127.0.0.1:3000/next", False),
+    ("http://127.0.0.1/next", True),
+    ("https://127.0.0.1:3000/next", True),
+    ("http://127.0.0.2:3000/next", True),
+    ("http://[::1", True),
+])
+def test_public_only_for_operator_origin_compares_scheme_host_and_port(url, public_only):
+    assert url_safety.public_only_for_origin(url, "http://127.0.0.1:3000/start") is public_only
+
 # ---------------------------------------------------------------------------
 # normalize_hostname (v2 self-audit: closes obfuscated-IPv4 + FQDN bypasses)
 # ---------------------------------------------------------------------------
@@ -1310,6 +1322,15 @@ def test_proxied_redirect_refusal_is_both_error_types(monkeypatch) -> None:
     assert isinstance(excinfo.value, url_safety.URLSafetyError)
     assert "configured proxy" in str(excinfo.value)
     assert "10.0.0.5" in str(excinfo.value)
+
+
+def test_public_only_get_refuses_a_local_redirect_even_when_operator_allowlisted(monkeypatch) -> None:
+    monkeypatch.setenv("CLAUDE_SEO_LOCAL_TARGETS", "127.0.0.1:3000")
+    wire = _behind_proxy(monkeypatch, {
+        "http://start.example/": (302, "http://127.0.0.1:3000/admin")})
+    with pytest.raises(url_safety.ProxiedRequestRefused):
+        url_safety.safe_requests_get("http://start.example/", public_only=True)
+    assert wire.urls() == ["http://start.example/"]
 
 
 def test_proxied_redirect_to_a_public_target_is_followed(monkeypatch) -> None:

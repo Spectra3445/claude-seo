@@ -352,7 +352,7 @@ def test_crawl_fake_site(monkeypatch, tmp_path):
     }
     calls = []
 
-    def fake(url, timeout=30, user_agent=None):
+    def fake(url, timeout=30, user_agent=None, **kwargs):
         calls.append(url)
         status, headers, body = site.get(url, (404, {"Content-Type": "text/html"}, b""))
         return {"status": status, "headers": headers, "body": body}
@@ -403,7 +403,7 @@ def test_seed_urls_expands_sitemap_index_and_urlset(monkeypatch):
     monkeypatch.setattr(
         cs,
         "fetch",
-        lambda url, timeout=30, user_agent=None: {
+            lambda url, timeout=30, user_agent=None, **_kwargs: {
             "status": xml.get(url, (404, {}, b""))[0],
             "headers": xml.get(url, (404, {}, b""))[1],
             "body": xml.get(url, (404, {}, b""))[2],
@@ -463,7 +463,7 @@ def test_static_assets_do_not_count_toward_page_limit(monkeypatch):
     }
     calls = []
 
-    def fake(url, timeout=30, user_agent=None):
+    def fake(url, timeout=30, user_agent=None, **kwargs):
         calls.append(url)
         status, headers, body = site.get(url, (404, {"Content-Type": "text/html"}, b""))
         return {"status": status, "headers": headers, "body": body}
@@ -523,6 +523,36 @@ def test_fetch_record_accepts_lowercase_response_headers(monkeypatch):
     _, record, targets = cs.fetch_record(url, "example.com", None, args)
     assert record["redirect_to"] == "https://example.com/new/"
     assert targets == [record["redirect_to"]]
+
+
+def test_same_origin_pages_keep_the_local_target_exception_without_robots(monkeypatch):
+    seen = []
+
+    def fake(url, _timeout, _user_agent, *, public_only):
+        seen.append((url, public_only))
+        return {"status": 404, "headers": {}, "body": b""}
+
+    monkeypatch.setattr(cs, "fetch", fake)
+    monkeypatch.setattr(cs.time, "sleep", lambda _delay: None)
+    args = SimpleNamespace(no_robots=True, timeout=1, user_agent="TestBot", delay=0)
+    start = "https://example.com/"
+    cs.fetch_record(start, "example.com", None, args, start)
+    cs.fetch_record("https://example.com/derived", "example.com", None, args, start)
+    assert seen == [(start, False), ("https://example.com/derived", False)]
+
+
+def test_robots_and_same_origin_sitemap_keep_local_exception(monkeypatch):
+    origin = "http://127.0.0.1:3000"
+    seen = []
+    def fake(url, _timeout, _user_agent, *, public_only):
+        seen.append((url, public_only))
+        if url.endswith("robots.txt"):
+            return {"status": 200, "headers": {}, "body": f"Sitemap: {origin}/sitemap.xml".encode()}
+        return {"status": 200, "headers": {}, "body": b"<urlset></urlset>"}
+    monkeypatch.setattr(cs, "fetch", fake)
+    args = SimpleNamespace(no_robots=False, timeout=1, user_agent="TestBot", max_pages=3)
+    cs.seed_urls(origin + "/start", args, "127.0.0.1", origin)
+    assert seen == [(origin + "/robots.txt", False), (origin + "/sitemap.xml", False)]
 
 
 def test_extract_html_reads_lowercase_x_robots_tag():

@@ -11,6 +11,8 @@ def test_host_variant_probe_reports_www_and_http_with_injected_fetcher():
             pass
 
     def fetch(url, **kwargs):
+        assert kwargs["stream"] is True
+        assert kwargs["public_only"] is True
         if url.startswith("http://"):
             return Response(301, {"location": url.replace("http://", "https://")})
         return Response(200)

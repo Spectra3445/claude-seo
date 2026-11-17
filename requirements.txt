@@ -22,7 +22,6 @@ pillow>=13.0.0,<14.0.0                # Transitive (matplotlib, weasyprint); 8 a
 numpy>=2.2.6,<3.0.0                   # Direct import in google_report.py; matplotlib>=3.9 is the first numpy 2 release line
 weasyprint>=70.0,<71.0                # PYSEC-2026-3940 fixed in 70.0
 openpyxl>=3.1.5,<4.0.0                # No known CVEs (Excel export)
-pillow>=13.0.0,<14.0.0                # Transitive via matplotlib and weasyprint; GHSA-22hg-r758-rrw9 and 27 more fixed in 13.0.0
 
 # Google API dependencies (for seo-google skill)
 google-api-python-client>=2.196.0,<3.0.0   # No known CVEs

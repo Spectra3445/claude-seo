@@ -169,10 +169,19 @@ def test_redirects_and_non_json_bodies_get_a_clear_error(status, message) -> Non
 def test_post_goes_through_a_pinned_session_without_following_redirects() -> None:
     calls = {}
 
+    class Response:
+        def iter_content(self, chunk_size):
+            yield b"resp"
+
+        def close(self):
+            pass
+
+    response = Response()
+
     class Session:
         def post(self, url, **kwargs):
             calls.update(kwargs, url=url)
-            return "resp"
+            return response
 
     from contextlib import contextmanager
 
@@ -182,6 +191,8 @@ def test_post_goes_through_a_pinned_session_without_following_redirects() -> Non
         yield Session()
 
     with patch.object(keywordseverywhere_api, "safe_requests_session", fake_session):
-        assert keywordseverywhere_api._post(keywordseverywhere_api.KWE_BASE, json={}) == "resp"
+        assert keywordseverywhere_api._post(keywordseverywhere_api.KWE_BASE, json={}) is response
     assert calls["pinned"] == keywordseverywhere_api.KWE_BASE
     assert calls["allow_redirects"] is False
+    assert calls["stream"] is True
+    assert response._content == b"resp"
