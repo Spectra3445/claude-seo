@@ -42,8 +42,8 @@ _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 from url_safety import (  # noqa: E402
-    URLSafetyError,
     MAX_PAGE_BYTES,
+    URLSafetyError,
     decode_response_text,
     public_only_for_origin,
     safe_requests_get,

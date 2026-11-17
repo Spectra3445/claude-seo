@@ -292,7 +292,7 @@ def test_exchange_sends_verifier_with_timeout_and_clears_pending(isolated, monke
     assert calls[0]["data"]["code_verifier"] == ["v" * 64]
     assert calls[0]["timeout"] == 30
     assert google_auth._load_pending_flow() is None
-    token = json.loads(Path(google_auth.TOKEN_PATH).read_text())
+    token = json.loads(Path(google_auth.TOKEN_PATH).read_text(encoding="utf-8"))
     assert "client_secret" not in token and token["access_token"] == "at"
 
 

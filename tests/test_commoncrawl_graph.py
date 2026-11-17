@@ -13,9 +13,9 @@ No network: only the pure path/validation helpers are exercised.
 
 from __future__ import annotations
 
+import gzip
 import os
 import sys
-import gzip
 
 import pytest
 

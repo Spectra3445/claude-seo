@@ -32,7 +32,7 @@ try:
         redact_google_api_key,
         validate_url,
     )
-    from url_safety import URLSafetyError, MAX_PAGE_BYTES, decode_response_text, safe_requests_get
+    from url_safety import MAX_PAGE_BYTES, URLSafetyError, decode_response_text, safe_requests_get
 except ImportError:
     import os
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -42,7 +42,7 @@ except ImportError:
         redact_google_api_key,
         validate_url,
     )
-    from url_safety import URLSafetyError, MAX_PAGE_BYTES, decode_response_text, safe_requests_get
+    from url_safety import MAX_PAGE_BYTES, URLSafetyError, decode_response_text, safe_requests_get
 
 NLP_ENDPOINT = "https://language.googleapis.com/v2/documents:annotateText"
 NLP_V1_ENTITIES_ENDPOINT = "https://language.googleapis.com/v1/documents:analyzeEntities"

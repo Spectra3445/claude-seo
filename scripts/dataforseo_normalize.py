@@ -447,7 +447,7 @@ def main():
     if args.input == "-":
         data = json.load(sys.stdin)
     else:
-        with open(args.input) as f:
+        with open(args.input, encoding="utf-8") as f:
             data = json.load(f)
 
     # Extract items from response envelope

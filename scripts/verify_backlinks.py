@@ -466,7 +466,7 @@ def main():
         if args.links == "-":
             links = json.load(sys.stdin)
         else:
-            with open(args.links, "r") as f:
+            with open(args.links, "r", encoding="utf-8") as f:
                 links = json.load(f)
     except (json.JSONDecodeError, IOError) as e:
         result = {

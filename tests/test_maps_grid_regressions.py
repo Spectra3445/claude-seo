@@ -31,12 +31,12 @@ def test_flush_preserves_entries_appended_during_upload(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "OUTBOX", outbox)
 
     def upload(_runs):
-        with outbox.open("a") as f:
+        with outbox.open("a", encoding="utf-8") as f:
             f.write('{"keyword":"during"}\n')
 
     monkeypatch.setattr(db, "push", upload)
     assert db.cmd_flush() == 0
-    assert [json.loads(line)["keyword"] for line in outbox.read_text().splitlines()] == ["during"]
+    assert [json.loads(line)["keyword"] for line in outbox.read_text(encoding="utf-8").splitlines()] == ["during"]
 
 
 def test_flush_replays_multiple_runs_and_leftover_drain(tmp_path, monkeypatch):
@@ -100,7 +100,7 @@ def test_partial_grid_records_coverage_but_cannot_publish_a_score(tmp_path, monk
         geogrid.maps_grid_db.push([run], env={"SEODB_URL": "https://current-project.supabase.co",
                                               "SEODB_SERVICE_KEY": "fake", "SEODB_SCHEMA": "seo"})
     assert "SoLV partial" in capsys.readouterr().out
-    assert json.loads(next(tmp_path.glob("grid-*.json")).read_text())["runs"][0]["received_cells"] == 1
+    assert json.loads(next(tmp_path.glob("grid-*.json")).read_text(encoding="utf-8"))["runs"][0]["received_cells"] == 1
 
 
 def test_service_key_is_sent_only_to_the_configured_https_supabase_origin(monkeypatch, capsys):
@@ -175,7 +175,7 @@ def test_db_writer_never_logs_config_file_values(tmp_path, monkeypatch, capsys):
     printed = capsys.readouterr()
     assert all(value not in printed.out + printed.err for value in
                ("private-service-key", "current-project.supabase.co", "private-schema"))
-    assert json.loads(db.OUTBOX.read_text()) == run
+    assert json.loads(db.OUTBOX.read_text(encoding="utf-8")) == run
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX mode bits are unavailable on Windows")
@@ -199,14 +199,14 @@ def test_private_writer_works_without_fchmod(tmp_path, monkeypatch):
     monkeypatch.delattr(db.os, "fchmod", raising=False)
     path = tmp_path / "private/file.jsonl"
     db.write_private(path, "test\n")
-    assert path.read_text() == "test\n"
+    assert path.read_text(encoding="utf-8") == "test\n"
     monkeypatch.setattr(db, "OUTBOX", tmp_path / "private/maps-outbox.jsonl")
     monkeypatch.setattr(db, "push", lambda _runs: (_ for _ in ()).throw(RuntimeError("offline")))
     run = {"client": "aristral", "keyword": "queued", "run_at": "2026-11-17T00:00:00Z",
            "center_lat": 51.4, "center_lng": -2.6, "grid_size": 1,
            "cells": [{"row": 0, "col": 0, "lat": 51.4, "lng": -2.6, "rank": 1}]}
     assert db.write_run(run) is None
-    assert json.loads(db.OUTBOX.read_text().strip()) == run
+    assert json.loads(db.OUTBOX.read_text(encoding="utf-8").strip()) == run
 
 
 def test_private_writer_closes_fd_when_permission_change_fails(tmp_path, monkeypatch):
@@ -243,7 +243,7 @@ def test_flush_quarantines_partial_runs_without_losing_them(tmp_path, monkeypatc
     assert db.cmd_flush() == 0
     assert uploaded == [valid]
     quarantine = outbox.with_name("maps-outbox.rejected.jsonl")
-    assert [json.loads(line) for line in quarantine.read_text().splitlines()] == [partial]
+    assert [json.loads(line) for line in quarantine.read_text(encoding="utf-8").splitlines()] == [partial]
     assert not outbox.exists()
     assert not list(outbox.parent.glob("maps-outbox.drain-*.jsonl"))
     assert "quarantined 1 rejected runs" in capsys.readouterr().err
@@ -277,4 +277,4 @@ def test_flush_lock_keeps_a_concurrent_writer_out_of_the_drained_file(tmp_path, 
     assert db.cmd_flush() == 0
     writer.join(timeout=2)
     assert wrote.is_set()
-    assert [json.loads(line)["keyword"] for line in outbox.read_text().splitlines()] == ["during"]
+    assert [json.loads(line)["keyword"] for line in outbox.read_text(encoding="utf-8").splitlines()] == ["during"]

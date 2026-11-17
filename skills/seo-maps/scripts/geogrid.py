@@ -17,13 +17,13 @@ before re-running with --yes.
 import argparse
 import datetime as dt
 import json
-import uuid
 import math
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))

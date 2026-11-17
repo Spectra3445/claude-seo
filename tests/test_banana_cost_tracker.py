@@ -54,7 +54,7 @@ def _run(home: Path, *argv: str) -> subprocess.CompletedProcess:
 
 
 def _ledger(home: Path) -> dict:
-    return json.loads((home / "costs.json").read_text())
+    return json.loads((home / "costs.json").read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +159,7 @@ def test_corrupt_ledger_is_not_silently_zeroed(tmp_path) -> None:
     assert "not valid JSON" in result.stderr
 
     # Left in place for inspection, not overwritten.
-    assert ledger.read_text().endswith('"cos')
+    assert ledger.read_text(encoding="utf-8").endswith('"cos')
 
 
 def test_reset_recovers_a_corrupt_ledger(tmp_path) -> None:
@@ -206,7 +206,7 @@ def test_missing_aggregate_fields_are_tolerated(tmp_path) -> None:
 
 def test_locking_is_never_disabled_unconditionally() -> None:
     """The tracker must never run the ledger unlocked on any platform."""
-    source = _SCRIPT.read_text()
+    source = _SCRIPT.read_text(encoding="utf-8")
     assert "import fcntl" in source and "import msvcrt" in source
     assert "Refusing to touch the cost ledger unlocked" in source
 

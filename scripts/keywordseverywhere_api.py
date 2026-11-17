@@ -37,8 +37,8 @@ sys.path.insert(0, _SCRIPTS_DIR)
 try:
     from backlinks_auth import get_keywordseverywhere_api_key
     from url_safety import (
-        URLSafetyError,
         MAX_PAGE_BYTES,
+        URLSafetyError,
         bounded_response,
         normalize_hostname,
         safe_requests_session,

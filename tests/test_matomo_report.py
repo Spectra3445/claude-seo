@@ -814,7 +814,7 @@ def test_save_config_writes_0600(monkeypatch, tmp_path):
         "matomo_site_id": "1",
     })
     assert target.stat().st_mode & 0o777 == 0o600
-    assert json.loads(target.read_text()) == {
+    assert json.loads(target.read_text(encoding="utf-8")) == {
         "matomo_url": "https://analytics.example.com",
         "matomo_token": SECRET_TOKEN,
         "matomo_site_id": "1",
@@ -831,7 +831,7 @@ def test_save_config_drops_empty_and_unknown_keys(monkeypatch, tmp_path):
         "matomo_site_id": "",
         "something_else": "dropped",
     })
-    stored = json.loads(target.read_text())
+    stored = json.loads(target.read_text(encoding="utf-8"))
     assert "matomo_site_id" not in stored
     assert "something_else" not in stored
 
@@ -845,7 +845,7 @@ def test_save_config_is_atomic_and_leaves_no_temp_file(monkeypatch, tmp_path):
     monkeypatch.setattr(matomo_auth, "CONFIG_PATH", str(target))
     matomo_auth.save_config({"matomo_url": "https://old.example.com",
                              "matomo_token": "old-token"})
-    before = target.read_text()
+    before = target.read_text(encoding="utf-8")
 
     def boom(src, dst):
         raise OSError("simulated crash during rename")
@@ -855,8 +855,8 @@ def test_save_config_is_atomic_and_leaves_no_temp_file(monkeypatch, tmp_path):
         matomo_auth.save_config({"matomo_url": "https://new.example.com",
                                  "matomo_token": SECRET_TOKEN})
 
-    assert target.read_text() == before
-    assert SECRET_TOKEN not in target.read_text()
+    assert target.read_text(encoding="utf-8") == before
+    assert SECRET_TOKEN not in target.read_text(encoding="utf-8")
     assert sorted(f.name for f in tmp_path.iterdir()) == ["matomo.json"]
 
 
@@ -1013,7 +1013,7 @@ def test_installer_writer_is_inert_against_an_injection_shaped_token(tmp_path):
 
     written = home / ".config" / "claude-seo" / "matomo.json"
     assert written.stat().st_mode & 0o777 == 0o600
-    assert json.loads(written.read_text())["matomo_token"] == nasty
+    assert json.loads(written.read_text(encoding="utf-8"))["matomo_token"] == nasty
 
 
 def test_installer_writer_survives_a_dropped_optional_argument(tmp_path):
@@ -1028,7 +1028,7 @@ def test_installer_writer_survives_a_dropped_optional_argument(tmp_path):
         env={**os.environ, "HOME": str(home), "USERPROFILE": str(home), "CLAUDE_SEO_SECRET": SECRET_TOKEN},
     )
     assert proc.returncode == 0, proc.stderr
-    stored = json.loads((home / ".config" / "claude-seo" / "matomo.json").read_text())
+    stored = json.loads((home / ".config" / "claude-seo" / "matomo.json").read_text(encoding="utf-8"))
     assert stored["matomo_token"] == SECRET_TOKEN
     assert "matomo_site_id" not in stored
 
@@ -1047,7 +1047,7 @@ def test_installer_writer_follows_the_profile_directory(tmp_path):
              "CLAUDE_SEO_SECRET": SECRET_TOKEN, "CLAUDE_SEO_PROFILE_DIR": str(profile)},
     )
     assert proc.returncode == 0, proc.stderr
-    stored = json.loads((profile / "matomo.json").read_text())
+    stored = json.loads((profile / "matomo.json").read_text(encoding="utf-8"))
     assert stored["matomo_token"] == SECRET_TOKEN
     assert not (home / ".config" / "claude-seo" / "matomo.json").exists()
     assert str(profile.resolve() / "matomo.json") in proc.stdout
@@ -1067,6 +1067,6 @@ def test_ps1_installer_writer_follows_the_profile_directory(tmp_path):
              "CLAUDE_SEO_SECRET": SECRET_TOKEN, "CLAUDE_SEO_PROFILE_DIR": str(profile)},
     )
     assert proc.returncode == 0, proc.stderr
-    stored = json.loads((profile / "matomo.json").read_text())
+    stored = json.loads((profile / "matomo.json").read_text(encoding="utf-8"))
     assert stored["matomo_token"] == SECRET_TOKEN
     assert not (home / ".config" / "claude-seo" / "matomo.json").exists()

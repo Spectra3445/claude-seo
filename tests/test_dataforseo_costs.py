@@ -39,7 +39,7 @@ def _run(config_dir: Path, *argv: str) -> subprocess.CompletedProcess:
 
 
 def _entries(config_dir: Path) -> list[dict]:
-    return json.loads((config_dir / "dataforseo-ledger.json").read_text())["entries"]
+    return json.loads((config_dir / "dataforseo-ledger.json").read_text(encoding="utf-8"))["entries"]
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ def test_corrupt_ledger_is_not_silently_zeroed(tmp_path) -> None:
     assert "not valid JSON" in payload["message"]
 
     # The damaged file is left in place for inspection, not overwritten.
-    assert ledger.read_text().endswith('"cos')
+    assert ledger.read_text(encoding="utf-8").endswith('"cos')
 
 
 def test_today_totals_survive_a_write(tmp_path) -> None:
@@ -158,7 +158,7 @@ def test_locking_is_never_disabled_unconditionally() -> None:
     The module previously ran with no locking at all on Windows. It must now
     fall back to msvcrt and, failing that, refuse to touch the ledger.
     """
-    source = _SCRIPT.read_text()
+    source = _SCRIPT.read_text(encoding="utf-8")
     assert "import msvcrt" in source, "no Windows locking fallback"
     assert "Refusing to touch the spend ledger unlocked" in source, (
         "module must fail closed when no locking primitive is available"

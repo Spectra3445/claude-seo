@@ -296,7 +296,7 @@ def main():
     if args.batch:
         # Batch mode
         try:
-            with open(args.batch, "r") as f:
+            with open(args.batch, "r", encoding="utf-8") as f:
                 urls = [line.strip() for line in f if line.strip()]
         except IOError as e:
             print(f"Error reading batch file: {e}", file=sys.stderr)

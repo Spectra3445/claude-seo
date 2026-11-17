@@ -91,10 +91,10 @@ def _build_ads_client() -> Optional[object]:
         # Try to use OAuth token if available
         token_path = google_auth.TOKEN_PATH
         if os.path.exists(token_path):
-            with open(token_path) as f:
+            with open(token_path, encoding="utf-8") as f:
                 token_data = json.load(f)
             if oauth_client_path:
-                with open(os.path.expanduser(oauth_client_path)) as f:
+                with open(os.path.expanduser(oauth_client_path), encoding="utf-8") as f:
                     client_data = json.load(f)
                 client_info = client_data.get("web", client_data.get("installed", {}))
                 ads_config["client_id"] = client_info.get("client_id")

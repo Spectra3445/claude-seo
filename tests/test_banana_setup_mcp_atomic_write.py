@@ -42,7 +42,7 @@ def test_setup_mcp_writes_config_with_no_leftover_temp_file(tmp_path, monkeypatc
 
     settings_path = tmp_path / ".claude.json"
     assert settings_path.exists()
-    data = json.loads(settings_path.read_text())
+    data = json.loads(settings_path.read_text(encoding="utf-8"))
     assert data["mcpServers"]["nanobanana-mcp"]["env"]["GOOGLE_AI_API_KEY"] == "dummy-api-key"
     assert list(tmp_path.glob(".claude.json.*.tmp")) == []
 
@@ -55,7 +55,7 @@ def test_save_settings_preserves_unrelated_keys_on_existing_file(tmp_path, monke
 
     module.setup_mcp("dummy-api-key")
 
-    data = json.loads((tmp_path / ".claude.json").read_text())
+    data = json.loads((tmp_path / ".claude.json").read_text(encoding="utf-8"))
     assert data["unrelated"] == "keep-me"
     assert "other-mcp" in data["mcpServers"]
     assert "nanobanana-mcp" in data["mcpServers"]
@@ -90,5 +90,5 @@ def test_save_settings_cleans_up_temp_file_and_leaves_original_on_failure(tmp_pa
     with pytest.raises(TypeError):
         module.save_settings({"bad": Unserializable()})
 
-    assert json.loads((tmp_path / ".claude.json").read_text()) == original
+    assert json.loads((tmp_path / ".claude.json").read_text(encoding="utf-8")) == original
     assert list(tmp_path.glob(".claude.json.*.tmp")) == []

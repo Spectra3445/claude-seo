@@ -102,9 +102,11 @@ def glyph_field(subject):
     for i in range(30):
         row_shift = (i // 10) % 2
         if (i + row_shift) % 2 == 0:
-            cells.append(subject[s_i % len(subject)]); s_i += 1
+            cells.append(subject[s_i % len(subject)])
+            s_i += 1
         else:
-            cells.append(SEARCH_SET[(q_i * 3) % len(SEARCH_SET)]); q_i += 1
+            cells.append(SEARCH_SET[(q_i * 3) % len(SEARCH_SET)])
+            q_i += 1
     lit = {2: "lit-e", 7: "lit-a", 12: "lit-e", 16: "lit-s", 21: "lit-a", 26: "lit-e"}
     return "".join(glyph_svg(n, f"gl {lit.get(i, '')}".strip()) for i, n in enumerate(cells))
 
@@ -133,7 +135,8 @@ def line_chart(c):
     if ymax == ymin:
         ymax = ymin + 1
     ticks, style = c.get("ticks", []), c.get("format", "int")
-    f = lambda n: fmt_num(n, style)
+    def f(n):
+        return fmt_num(n, style)
     iw, ih = w - pad_l - pad_r, h - pad_t - pad_b
     xs = [pad_l + i * iw / (len(values) - 1) for i in range(len(values))] if len(values) > 1 else [pad_l + iw / 2]
     ys = [pad_t + ih - (v - ymin) / (ymax - ymin) * ih for v in values]
@@ -328,7 +331,8 @@ def render(r):
            f'<div class="pane-r">{score_ring(r["_overall"])}<div class="field" aria-hidden="true">{glyph_field(hero.get("glyphs"))}</div></div></section>']
     for i, s in enumerate(r["sections"], 1):
         if s["type"] not in SECTIONS:
-            errs.append(f"sections[{i-1}]: unknown type '{s['type']}' (known: {', '.join(SECTIONS)})"); continue
+            errs.append(f"sections[{i-1}]: unknown type '{s['type']}' (known: {', '.join(SECTIONS)})")
+            continue
         out.append(f'<section aria-labelledby="s{i}">{SECTIONS[s["type"]](s, f"s{i}", errs, r)}</section>')
     c = r["close"]
     need(c.get("href", "https://aristral.com/contact").rstrip("/") == "https://aristral.com/contact", "close.href: the only call to action is https://aristral.com/contact", errs)

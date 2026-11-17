@@ -179,7 +179,7 @@ def _is_cached(domain: str, release: str) -> Optional[dict]:
     cache_path = _get_cache_path(domain, release, "combined")
     if os.path.exists(cache_path):
         try:
-            with open(cache_path, "r") as f:
+            with open(cache_path, "r", encoding="utf-8") as f:
                 cached = json.load(f)
             # Check cache age (90 days max)
             cached_time = cached.get("metadata", {}).get("cached_at", 0)
@@ -194,7 +194,7 @@ def _save_cache(domain: str, release: str, data: dict) -> None:
     """Save domain data to cache."""
     cache_path = _get_cache_path(domain, release, "combined")
     data.setdefault("metadata", {})["cached_at"] = time.time()
-    with open(cache_path, "w") as f:
+    with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
 
@@ -545,7 +545,7 @@ def main():
             print(f"  Harmonic Centrality:       {data.get('harmonic_centrality', 'N/A')} (rank #{data.get('harmonic_centrality_rank', 'N/A')})")
             print(f"  Number of hosts:           {data.get('n_hosts', 'N/A')}")
             if result["status"] == "partial":
-                print(f"  Status:                    partial")
+                print("  Status:                    partial")
                 print(f"  In crawl:                  {data.get('in_crawl')}")
                 print(f"  Stopped:                   {result['metadata']['stop_reason']}")
         elif result.get("error"):

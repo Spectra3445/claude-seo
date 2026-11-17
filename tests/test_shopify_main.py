@@ -7,8 +7,8 @@ error paths for filters and redirects. No test touches the network.
 
 from __future__ import annotations
 
-import contextlib
 import concurrent.futures
+import contextlib
 import importlib.util
 import json
 import sys

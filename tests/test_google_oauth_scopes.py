@@ -132,7 +132,7 @@ def test_token_file_that_is_not_an_object_is_treated_as_unknown(isolated, conten
 def test_saving_a_token_never_writes_the_client_secret(isolated) -> None:
     token = {"access_token": "at", "refresh_token": "rt", "client_secret": "s3cret-value"}
     google_auth._save_oauth_token(token)
-    saved = (isolated / "oauth-token.json").read_text()
+    saved = (isolated / "oauth-token.json").read_text(encoding="utf-8")
     assert "client_secret" not in saved and "s3cret-value" not in saved
     assert json.loads(saved) == {"access_token": "at", "refresh_token": "rt"}
 
@@ -156,7 +156,7 @@ def test_refresh_cleans_a_token_file_that_holds_a_client_secret(isolated, monkey
     client = {"client_id": "id", "client_secret": "s3cret-value"}
     refreshed = google_auth._refresh_oauth_token(client, google_auth._load_oauth_token())
     assert refreshed["access_token"] == "new-at"
-    saved = json.loads(path.read_text())
+    saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["access_token"] == "new-at" and saved["refresh_token"] == "rt"
     assert "client_secret" not in saved
 

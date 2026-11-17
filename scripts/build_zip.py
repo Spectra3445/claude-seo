@@ -12,7 +12,6 @@ itself, and tests/.
 
 import fnmatch
 import os
-import sys
 import zipfile
 from pathlib import Path
 

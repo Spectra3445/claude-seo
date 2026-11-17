@@ -179,7 +179,7 @@ def load_config() -> dict:
         _chmod_quiet(CONFIG_PATH, 0o600)
         _restrict_to_current_user_windows(CONFIG_PATH)
         try:
-            with open(CONFIG_PATH, "r") as f:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 file_config = json.load(f)
             for k, v in file_config.items():
                 if v is not None and v != "":

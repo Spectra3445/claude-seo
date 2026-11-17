@@ -513,7 +513,7 @@ def test_verify_greek_human_output_notes_partial_coverage() -> None:
 def test_seo_updates_data_file_is_valid_json() -> None:
     data_path = Path(__file__).resolve().parents[1] / "data" / "google-updates.json"
     assert data_path.is_file()
-    with data_path.open() as fh:
+    with data_path.open(encoding="utf-8") as fh:
         data = json.load(fh)
     assert "updates" in data
     assert "source_of_truth" in data
@@ -524,7 +524,7 @@ def test_seo_updates_every_entry_has_google_owned_source() -> None:
     """Policy: every entry must cite a Google-owned URL. Third-party-only
     claims belong in unverified[]."""
     data_path = Path(__file__).resolve().parents[1] / "data" / "google-updates.json"
-    with data_path.open() as fh:
+    with data_path.open(encoding="utf-8") as fh:
         data = json.load(fh)
     google_hosts = {
         "developers.google.com",
@@ -594,7 +594,7 @@ def test_seo_updates_primary_ledger_does_not_embed_third_party_sources() -> None
 def test_seo_updates_unverified_entries_call_out_status() -> None:
     """Unverified entries must include a primary_source_check pointer."""
     data_path = Path(__file__).resolve().parents[1] / "data" / "google-updates.json"
-    with data_path.open() as fh:
+    with data_path.open(encoding="utf-8") as fh:
         data = json.load(fh)
     for entry in data.get("unverified", []):
         assert "primary_source_check" in entry

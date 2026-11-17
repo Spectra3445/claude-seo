@@ -147,8 +147,8 @@ def test_pipeline_continues_on_failed_check_and_writes_report(tmp_path, monkeypa
         ],
     )
     assert audit_checks.main() == 0
-    data = json.loads((tmp_path / "findings/site-checks.json").read_text())
-    report = (tmp_path / "findings/site-checks.md").read_text()
+    data = json.loads((tmp_path / "findings/site-checks.json").read_text(encoding="utf-8"))
+    report = (tmp_path / "findings/site-checks.md").read_text(encoding="utf-8")
     assert data["baseline"] == str(old)
     assert data["manifest"]["steps"]["schema"]["exit_code"] == 1
     assert len(data["manifest"]["steps"]["schema"]["stderr_tail"]) == 300
@@ -228,5 +228,5 @@ def test_link_options_pass_through(tmp_path, monkeypatch):
     assert link_command[link_command.index("--external-limit") + 1] == "22"
     assert link_command[link_command.index("--timeout") + 1] == "4.0"
     assert "--no-retry" in link_command
-    manifest = json.loads((tmp_path / "out/findings/site-checks.json").read_text())["manifest"]
+    manifest = json.loads((tmp_path / "out/findings/site-checks.json").read_text(encoding="utf-8"))["manifest"]
     assert manifest["steps"]["link_audit"]["elapsed_seconds"] >= 0

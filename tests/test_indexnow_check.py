@@ -94,7 +94,7 @@ def test_submit_ledger_on_success(monkeypatch, tmp_path):
         ],
     )
     assert indexnow_submit.main() == 0
-    row = json.loads((tmp_path / "x.jsonl").read_text())
+    row = json.loads((tmp_path / "x.jsonl").read_text(encoding="utf-8"))
     assert row["status"] == 200
     assert row["key_hint"] == "abcdef"
     assert row["key_file"] == "https://example.com/abcdefgh.txt"

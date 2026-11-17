@@ -131,7 +131,7 @@ def load_config() -> dict:
     # Load from config file
     if os.path.exists(CONFIG_PATH):
         try:
-            with open(CONFIG_PATH, "r") as f:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 file_config = json.load(f)
             config.update({k: v for k, v in file_config.items() if v})
         except (json.JSONDecodeError, IOError) as e:
@@ -213,7 +213,7 @@ def _load_gcloud_adc() -> Optional[dict]:
     a service account file here is not the person's own access."""
     path = _gcloud_adc_path()
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
@@ -251,7 +251,7 @@ def get_gcloud_credentials(scopes: list):
 def _load_oauth_client(creds_path: str) -> Optional[dict]:
     """Load OAuth client credentials from a client_secret JSON file."""
     try:
-        with open(creds_path, "r") as f:
+        with open(creds_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data.get("web", data.get("installed", {}))
     except (json.JSONDecodeError, IOError) as e:
@@ -280,7 +280,7 @@ def _load_oauth_token() -> Optional[dict]:
         return None
     _chmod_quiet(TOKEN_PATH, 0o600)
     try:
-        with open(TOKEN_PATH, "r") as f:
+        with open(TOKEN_PATH, "r", encoding="utf-8") as f:
             token_data = json.load(f)
     except (json.JSONDecodeError, IOError):
         return None
@@ -367,7 +367,7 @@ def _load_pending_flow() -> Optional[dict]:
     if not os.path.exists(path):
         return None
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, IOError):
         return None
@@ -439,7 +439,7 @@ def _persist_oauth_client_path(creds_path: str):
     config = {}
     if os.path.exists(CONFIG_PATH):
         try:
-            with open(CONFIG_PATH, "r") as f:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 config = json.load(f)
         except (json.JSONDecodeError, IOError):
             config = {}
@@ -919,7 +919,7 @@ def check_credentials(service: str) -> dict:
                     result["error"] = f"Service account file not found: {sa_path}"
                 else:
                     try:
-                        with open(sa_path, "r") as f:
+                        with open(sa_path, "r", encoding="utf-8") as f:
                             sa_data = json.load(f)
                         if "client_email" not in sa_data or "private_key" not in sa_data:
                             result["error"] = "Service account JSON missing required fields (client_email, private_key)"
@@ -978,7 +978,7 @@ def detect_tier() -> dict:
             sa_path = os.path.expanduser(sa_path)
             if os.path.exists(sa_path):
                 try:
-                    with open(sa_path, "r") as f:
+                    with open(sa_path, "r", encoding="utf-8") as f:
                         sa_data = json.load(f)
                     if "client_email" in sa_data and "private_key" in sa_data:
                         has_authenticated = True

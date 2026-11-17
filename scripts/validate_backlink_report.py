@@ -413,7 +413,7 @@ def main():
         if args.report == "-":
             report_data = json.load(sys.stdin)
         else:
-            with open(args.report, "r") as f:
+            with open(args.report, "r", encoding="utf-8") as f:
                 report_data = json.load(f)
     except (json.JSONDecodeError, IOError) as e:
         print(f"Error loading report: {e}", file=sys.stderr)

@@ -41,8 +41,13 @@ from snapshot_io import (  # noqa: E402
     snapshot_filename,
     write_json,
 )
-from url_safety import (DEFAULT_USER_AGENT, decode_body, public_only_for_origin,
-                        safe_requests_get, validate_url_strict)  # noqa: E402
+from url_safety import (  # noqa: E402
+    DEFAULT_USER_AGENT,
+    decode_body,
+    public_only_for_origin,
+    safe_requests_get,
+    validate_url_strict,
+)
 
 MAX_BODY = 3 * 1024 * 1024
 STATIC_EXTENSIONS = {

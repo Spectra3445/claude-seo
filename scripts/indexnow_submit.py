@@ -46,8 +46,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import posixpath
+import re
 import sys
 import threading
 from pathlib import Path
@@ -58,7 +58,7 @@ _SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 from snapshot_io import bare_host, finding, normalize_url, now_iso, write_json  # noqa: E402
-from url_safety import URLSafetyError, MAX_PAGE_BYTES, safe_requests_get, validate_url_strict  # noqa: E402
+from url_safety import MAX_PAGE_BYTES, URLSafetyError, safe_requests_get, validate_url_strict  # noqa: E402
 
 # The umbrella endpoint forwards to every participating engine. Individual
 # engine endpoints exist, but api.indexnow.org dispatches automatically.

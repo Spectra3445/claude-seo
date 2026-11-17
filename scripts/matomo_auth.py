@@ -36,8 +36,8 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 from url_safety import (  # noqa: E402  (path bootstrap must run first)
-    URLSafetyError,
     MAX_PAGE_BYTES,
+    URLSafetyError,
     bounded_response,
     is_safe_ip,
     safe_requests_session,
@@ -190,7 +190,7 @@ def load_config() -> dict:
         _chmod_quiet(CONFIG_PATH, 0o600)
         _restrict_to_current_user_windows(CONFIG_PATH)
         try:
-            with open(CONFIG_PATH, "r") as f:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 file_config = json.load(f)
             for k, v in file_config.items():
                 if v is not None and v != "":

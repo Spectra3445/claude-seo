@@ -71,8 +71,8 @@ from url_safety import (  # noqa: E402
     URLSafetyError,
     decode_body,
     json_depth_exceeds,
-    safe_requests_get,
     public_only_for_origin,
+    safe_requests_get,
 )
 
 CHECKED_ON = "2026-09-23"

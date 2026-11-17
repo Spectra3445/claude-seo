@@ -72,7 +72,7 @@ def freshness(last_verified: str | None, today: date | None = None,
 
 
 def _load() -> dict:
-    with _DATA_FILE.open() as fh:
+    with _DATA_FILE.open(encoding="utf-8") as fh:
         return json.load(fh)
 
 

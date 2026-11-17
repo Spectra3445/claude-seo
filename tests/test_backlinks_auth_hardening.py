@@ -43,7 +43,7 @@ def test_save_config_writes_with_0600_mode_bits(tmp_path, monkeypatch):
 
     assert config_path.exists()
     assert _mode(str(config_path)) == 0o600
-    assert json.loads(config_path.read_text())["moz_api_key"] == "mozscape-xxxx"
+    assert json.loads(config_path.read_text(encoding="utf-8"))["moz_api_key"] == "mozscape-xxxx"
 
 
 @pytest.mark.skipif(
@@ -82,7 +82,7 @@ def test_write_secure_json_creates_missing_parent_directory(tmp_path):
     backlinks_auth._write_secure_json(str(nested_path), {"moz_api_key": "x"})
 
     assert nested_path.exists()
-    assert json.loads(nested_path.read_text())["moz_api_key"] == "x"
+    assert json.loads(nested_path.read_text(encoding="utf-8"))["moz_api_key"] == "x"
 
 
 def test_restrict_to_current_user_windows_is_a_noop_on_posix(monkeypatch):

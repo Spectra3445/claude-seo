@@ -13,10 +13,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-import sitemap_discovery
-import agentic_check
-import ucp_check
-import url_safety
+import agentic_check  # noqa: E402
+import sitemap_discovery  # noqa: E402
+import ucp_check  # noqa: E402
+import url_safety  # noqa: E402
 
 
 def test_declared_sitemap_cannot_use_the_operators_local_exception(monkeypatch):
@@ -145,7 +145,7 @@ def test_safe_get_caps_decoded_bytes_and_closes_response(monkeypatch):
 
 
 def test_dashboard_never_sends_brand_to_html_parser():
-    html = (ROOT / "skills/seo-maps/assets/local-map-rank-dashboard.template.html").read_text()
+    html = (ROOT / "skills/seo-maps/assets/local-map-rank-dashboard.template.html").read_text(encoding="utf-8")
     assert all("C.brand" not in line for line in html.splitlines() if "innerHTML" in line)
     assert "document.createTextNode(C.brand+\" (you)\")" in html
 

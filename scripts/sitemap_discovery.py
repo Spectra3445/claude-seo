@@ -58,8 +58,13 @@ _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
-from url_safety import (URLSafetyError, public_only_for_origin, read_bounded,
-                        safe_requests_session, validate_url)  # noqa: E402
+from url_safety import (  # noqa: E402
+    URLSafetyError,
+    public_only_for_origin,
+    read_bounded,
+    safe_requests_session,
+    validate_url,
+)
 
 COMMON_PATHS = (
     "/sitemap.xml",
